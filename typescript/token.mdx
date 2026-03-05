@@ -1,0 +1,421 @@
+---
+title: "@moq/token"
+description: "JWT token generation and validation for MoQ"
+---
+
+**[@moq/token](https://www.npmjs.com/package/@moq/token)** provides JWT token generation and validation for authenticating with MoQ relays.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/token
+```
+
+```bash bun
+bun add @moq/token
+```
+
+```bash pnpm
+pnpm add @moq/token
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.1.1
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `jose`, `zod`, `@hexagon/base64`
+
+## Overview
+
+MoQ relays typically require JWT authentication tokens with specific claims. This package makes it easy to generate and validate tokens in JavaScript/TypeScript.
+
+## Generating Tokens
+
+### Basic Usage
+
+```typescript
+import { generateToken } from "@moq/token";
+
+// Generate a token
+const token = await generateToken({
+  key: privateKey,        // Your ECDSA private key
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher"       // or "subscriber"
+});
+
+console.log(token); // eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### With Expiration
+
+```typescript
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher",
+  expiresIn: "1h"         // Expires in 1 hour
+});
+```
+
+Supported duration formats:
+- `"1h"` - 1 hour
+- `"30m"` - 30 minutes
+- `"24h"` - 24 hours
+- `"7d"` - 7 days
+
+### With Custom Claims
+
+```typescript
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher",
+  claims: {
+    userId: "user-123",
+    plan: "premium"
+  }
+});
+```
+
+## Generating Keys
+
+### Using the Key API
+
+```typescript
+import { generateKey, exportPrivateKey, exportPublicKey } from "@moq/token";
+
+// Generate a new ECDSA key pair (ES256)
+const keyPair = await generateKey();
+
+// Export keys in PEM format
+const privateKeyPem = await exportPrivateKey(keyPair.privateKey);
+const publicKeyPem = await exportPublicKey(keyPair.publicKey);
+
+console.log(privateKeyPem);
+// -----BEGIN PRIVATE KEY-----
+// MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0w...
+// -----END PRIVATE KEY-----
+
+console.log(publicKeyPem);
+// -----BEGIN PUBLIC KEY-----
+// MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+// -----END PUBLIC KEY-----
+```
+
+### Importing Existing Keys
+
+```typescript
+import { importPrivateKey, importPublicKey } from "@moq/token";
+
+// Import from PEM format
+const privateKey = await importPrivateKey(privateKeyPem);
+const publicKey = await importPublicKey(publicKeyPem);
+
+// Use imported key
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher"
+});
+```
+
+## Validating Tokens
+
+```typescript
+import { validateToken } from "@moq/token";
+
+try {
+  const payload = await validateToken({
+    token: token,
+    publicKey: publicKey,
+    audience: "https://relay.quic.video"
+  });
+  
+  console.log("Token is valid");
+  console.log("Subject:", payload.subject);
+  console.log("Role:", payload.role);
+  console.log("Expires:", new Date(payload.exp * 1000));
+} catch (error) {
+  console.error("Token validation failed:", error);
+}
+```
+
+## Token Claims
+
+### Standard Claims
+
+```typescript
+interface TokenClaims {
+  aud: string;      // Audience (relay URL)
+  sub: string;      // Subject (broadcast name)
+  role: string;     // Role ("publisher" or "subscriber")
+  exp?: number;     // Expiration timestamp (optional)
+  iat?: number;     // Issued at timestamp (optional)
+  nbf?: number;     // Not before timestamp (optional)
+  [key: string]: any; // Custom claims
+}
+```
+
+### Role-based Access
+
+```typescript
+// Publisher token (can publish and subscribe)
+const publisherToken = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher"
+});
+
+// Subscriber token (can only subscribe)
+const subscriberToken = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "subscriber"
+});
+```
+
+## Using with MoQ Lite
+
+### Publishing
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { generateToken } from "@moq/token";
+
+// Generate publisher token
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher",
+  expiresIn: "1h"
+});
+
+// Connect with token
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint",
+  token: token
+});
+
+// Publish
+const broadcast = await conn.publish("my-broadcast");
+```
+
+### Subscribing
+
+```typescript
+// Generate subscriber token
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "subscriber",
+  expiresIn: "1h"
+});
+
+// Connect with token
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint",
+  token: token
+});
+
+// Subscribe
+const subscriber = await conn.subscribe("my-broadcast");
+```
+
+## CLI Tool
+
+The package includes a CLI tool for generating tokens:
+
+```bash
+# Install globally
+npm install -g @moq/token
+
+# Generate a key pair
+moq-token keygen --output key.pem
+
+# Generate a token
+moq-token generate \
+  --key key.pem \
+  --audience https://relay.quic.video \
+  --subject my-broadcast \
+  --role publisher \
+  --expires 1h
+
+# Validate a token
+moq-token validate \
+  --token eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9... \
+  --key key.pub \
+  --audience https://relay.quic.video
+```
+
+### CLI Usage
+
+```bash
+moq-token --help
+
+Usage: moq-token [command] [options]
+
+Commands:
+  keygen        Generate a new ECDSA key pair
+  generate      Generate a JWT token
+  validate      Validate a JWT token
+
+Options:
+  -h, --help    Show help
+  -v, --version Show version
+```
+
+## Algorithm Support
+
+The library uses ES256 (ECDSA with P-256 and SHA-256) for signing tokens. This is a widely supported algorithm with good security properties.
+
+```typescript
+// Token header
+{
+  "alg": "ES256",
+  "typ": "JWT"
+}
+```
+
+## Security Best Practices
+
+### Protect Private Keys
+
+```typescript
+// Bad: Hardcoded private key
+const privateKey = await importPrivateKey(`-----BEGIN PRIVATE KEY-----
+...`);
+
+// Good: Load from environment or secure storage
+const privateKeyPem = process.env.MOQ_PRIVATE_KEY;
+const privateKey = await importPrivateKey(privateKeyPem);
+```
+
+### Use Short Expiration Times
+
+```typescript
+// Good: Short-lived tokens
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher",
+  expiresIn: "1h" // Refresh after 1 hour
+});
+```
+
+### Validate Tokens Server-Side
+
+```typescript
+// Server-side validation
+app.post("/api/connect", async (req, res) => {
+  try {
+    const payload = await validateToken({
+      token: req.body.token,
+      publicKey: serverPublicKey,
+      audience: "https://relay.quic.video"
+    });
+    
+    // Token is valid, allow connection
+    res.json({ allowed: true });
+  } catch (error) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+```
+
+### Use HTTPS
+
+Always transmit tokens over HTTPS to prevent interception:
+
+```typescript
+// Good: HTTPS relay
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  token: token
+});
+
+// Bad: HTTP relay (insecure!)
+const conn = await Connection.connect({
+  url: "http://relay.quic.video", // Don't do this!
+  token: token
+});
+```
+
+## Complete Example
+
+Here's a complete example generating keys, creating tokens, and connecting:
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { 
+  generateKey, 
+  exportPrivateKey, 
+  exportPublicKey,
+  generateToken 
+} from "@moq/token";
+
+// 1. Generate a key pair (do this once, store securely)
+const keyPair = await generateKey();
+const privateKeyPem = await exportPrivateKey(keyPair.privateKey);
+const publicKeyPem = await exportPublicKey(keyPair.publicKey);
+
+console.log("Save these keys securely:");
+console.log(privateKeyPem);
+console.log(publicKeyPem);
+
+// 2. Generate a token for publishing
+const token = await generateToken({
+  key: keyPair.privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "publisher",
+  expiresIn: "1h"
+});
+
+console.log("Token:", token);
+
+// 3. Connect and publish
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint",
+  token: token
+});
+
+const broadcast = await conn.publish("my-broadcast");
+console.log("Publishing!");
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/lite" icon="code" href="/typescript/moq-lite">
+    Use tokens with the MoQ protocol
+  </Card>
+  
+  <Card title="@moq/publish" icon="video" href="/typescript/publish">
+    Publish streams with authentication
+  </Card>
+  
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    Watch streams with authentication
+  </Card>
+  
+  <Card title="JWT.io" icon="book" href="https://jwt.io/">
+    Learn more about JWT tokens
+  </Card>
+</CardGroup>

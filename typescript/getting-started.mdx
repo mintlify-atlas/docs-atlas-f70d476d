@@ -1,0 +1,226 @@
+---
+title: "Getting Started"
+description: "Start building with the MoQ TypeScript SDK"
+---
+
+Get started with the MoQ TypeScript SDK for real-time live media delivery.
+
+## Installation
+
+Install the packages you need using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/lite @moq/hang
+```
+
+```bash bun
+bun add @moq/lite @moq/hang
+```
+
+```bash pnpm
+pnpm add @moq/lite @moq/hang
+```
+
+</CodeGroup>
+
+For web components:
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/watch @moq/publish
+```
+
+```bash bun
+bun add @moq/watch @moq/publish
+```
+
+```bash pnpm
+pnpm add @moq/watch @moq/publish
+```
+
+</CodeGroup>
+
+## Quick Start: Browser
+
+Here's a simple example to subscribe to a broadcast in the browser:
+
+<Steps>
+
+<Step title="Import the library">
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { Broadcast, Track } from "@moq/lite";
+```
+
+</Step>
+
+<Step title="Connect to a relay">
+
+```typescript
+// Connect to a MoQ relay
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint"
+});
+```
+
+</Step>
+
+<Step title="Subscribe to a broadcast">
+
+```typescript
+// Subscribe to a broadcast by name
+const subscriber = await conn.subscribe("my-broadcast");
+
+// Wait for tracks to be announced
+const announced = await subscriber.announced();
+if (!announced) throw new Error("broadcast closed");
+
+console.log("Track announced:", announced.track.name);
+
+// Subscribe to the track
+const track = await subscriber.subscribe(announced.track);
+
+// Read groups from the track
+for await (const group of track.groups()) {
+  console.log("Group sequence:", group.sequence);
+  
+  // Read frames from the group
+  for await (const frame of group.frames()) {
+    console.log("Frame size:", frame.byteLength);
+    // Process frame data...
+  }
+}
+```
+
+</Step>
+
+</Steps>
+
+## Quick Start: Node.js
+
+For Node.js environments, you need to use a WebTransport polyfill:
+
+<Steps>
+
+<Step title="Install WebTransport polyfill">
+
+<CodeGroup>
+
+```bash npm
+npm install @fails-components/webtransport @fails-components/webtransport-transport-http3-quiche
+```
+
+```bash bun
+bun add @fails-components/webtransport @fails-components/webtransport-transport-http3-quiche
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Import and configure">
+
+```typescript
+import { WebTransport } from "@fails-components/webtransport";
+import * as Connection from "@moq/lite/Connection";
+
+// Make WebTransport available globally
+globalThis.WebTransport = WebTransport as any;
+
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint"
+});
+
+// Now use the connection as normal
+const subscriber = await conn.subscribe("my-broadcast");
+```
+
+</Step>
+
+</Steps>
+
+## Using Web Components
+
+For the easiest integration, use the Web Components:
+
+<Steps>
+
+<Step title="Import the element">
+
+```typescript
+import "@moq/watch/element";
+```
+
+</Step>
+
+<Step title="Add to your HTML">
+
+```html
+<moq-watch 
+  url="https://relay.quic.video"
+  fingerprint="https://relay.quic.video/fingerprint"
+  broadcast="my-broadcast">
+</moq-watch>
+```
+
+</Step>
+
+</Steps>
+
+See the [Watch](/typescript/watch) and [Publish](/typescript/publish) documentation for more details.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Core Protocol" icon="code" href="/typescript/moq-lite">
+    Learn about Connection, Broadcast, Track, and Group APIs
+  </Card>
+  
+  <Card title="Media Handling" icon="film" href="/typescript/hang">
+    Work with WebCodecs, catalogs, and containers
+  </Card>
+  
+  <Card title="Watch Streams" icon="play" href="/typescript/watch">
+    Subscribe to and display live streams
+  </Card>
+  
+  <Card title="Publish Streams" icon="video" href="/typescript/publish">
+    Publish media from camera or screen
+  </Card>
+</CardGroup>
+
+## Authentication
+
+Most MoQ relays require JWT authentication. Use [@moq/token](/typescript/token) to generate tokens:
+
+```typescript
+import { generateToken } from "@moq/token";
+
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-broadcast",
+  role: "subscriber" // or "publisher"
+});
+
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint",
+  token: token
+});
+```
+
+## TypeScript Support
+
+All packages are written in TypeScript with full type definitions. Your IDE will provide autocompletion and type checking out of the box.
+
+```typescript
+import type { Track, Group } from "@moq/lite";
+import type { Catalog } from "@moq/hang/catalog";
+```

@@ -1,0 +1,395 @@
+---
+title: "@moq/watch"
+description: "Watch and display live MoQ streams"
+---
+
+**[@moq/watch](https://www.npmjs.com/package/@moq/watch)** provides a Web Component and JavaScript API for subscribing to and displaying MoQ broadcasts.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/watch
+```
+
+```bash bun
+bun add @moq/watch
+```
+
+```bash pnpm
+pnpm add @moq/watch
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.2.2
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `@moq/hang`, `@moq/lite`, `@moq/signals`, `@moq/ui-core`
+
+## Web Component Usage
+
+The easiest way to watch MoQ streams is using the `<moq-watch>` web component.
+
+<Steps>
+
+<Step title="Import the element">
+
+```typescript
+import "@moq/watch/element";
+```
+
+Or use a CDN:
+
+```html
+<script type="module" src="https://unpkg.com/@moq/watch/dist/element.js"></script>
+```
+
+</Step>
+
+<Step title="Add to HTML">
+
+```html
+<moq-watch 
+  url="https://relay.quic.video"
+  fingerprint="https://relay.quic.video/fingerprint"
+  broadcast="my-stream">
+</moq-watch>
+```
+
+</Step>
+
+<Step title="Style the component">
+
+```css
+moq-watch {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+```
+
+</Step>
+
+</Steps>
+
+## Web Component API
+
+### Attributes
+
+```html
+<moq-watch
+  url="https://relay.quic.video"
+  fingerprint="https://relay.quic.video/fingerprint"
+  broadcast="my-stream"
+  token="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+  muted="true"
+  autoplay="true"
+  controls="true">
+</moq-watch>
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `url` | string | WebTransport URL of the MoQ relay |
+| `fingerprint` | string | URL to relay's certificate fingerprint |
+| `broadcast` | string | Name of the broadcast to watch |
+| `token` | string | Optional JWT authentication token |
+| `muted` | boolean | Start muted (default: false) |
+| `autoplay` | boolean | Auto-play on load (default: true) |
+| `controls` | boolean | Show video controls (default: true) |
+
+### Properties
+
+```typescript
+const watch = document.querySelector("moq-watch");
+
+// Connection state
+console.log(watch.connected); // boolean
+console.log(watch.error); // Error | null
+
+// Playback state
+console.log(watch.playing); // boolean
+console.log(watch.muted); // boolean
+
+// Media info
+console.log(watch.tracks); // Track[]
+console.log(watch.catalog); // Catalog | null
+```
+
+### Methods
+
+```typescript
+const watch = document.querySelector("moq-watch");
+
+// Playback control
+watch.play();
+watch.pause();
+watch.mute();
+watch.unmute();
+
+// Connection control
+await watch.connect();
+watch.disconnect();
+```
+
+### Events
+
+```typescript
+const watch = document.querySelector("moq-watch");
+
+// Connection events
+watch.addEventListener("connected", () => {
+  console.log("Connected to relay");
+});
+
+watch.addEventListener("disconnected", () => {
+  console.log("Disconnected from relay");
+});
+
+watch.addEventListener("error", (e) => {
+  console.error("Error:", e.detail);
+});
+
+// Playback events
+watch.addEventListener("play", () => {
+  console.log("Playback started");
+});
+
+watch.addEventListener("pause", () => {
+  console.log("Playback paused");
+});
+
+// Media events
+watch.addEventListener("catalog", (e) => {
+  console.log("Catalog received:", e.detail);
+});
+
+watch.addEventListener("track", (e) => {
+  console.log("Track announced:", e.detail);
+});
+```
+
+## JavaScript API
+
+For more control, use the JavaScript API directly:
+
+```typescript
+import * as Watch from "@moq/watch";
+import * as Connection from "@moq/lite/Connection";
+
+// Connect to relay
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint"
+});
+
+// Subscribe to broadcast
+const subscriber = await conn.subscribe("my-stream");
+
+// Create watch instance
+const watch = new Watch.Broadcast({
+  subscriber: subscriber,
+  video: videoElement,
+  audio: audioContext
+});
+
+// Start watching
+await watch.start();
+```
+
+### Broadcast API
+
+```typescript
+import { Broadcast } from "@moq/watch";
+
+const broadcast = new Broadcast({
+  subscriber: subscriber,
+  video: videoElement,
+  audio: audioContext
+});
+
+// Start/stop
+await broadcast.start();
+broadcast.stop();
+
+// State
+const state = broadcast.state; // Signal<BroadcastState>
+state.subscribe(s => {
+  console.log("State:", s);
+});
+```
+
+### Video API
+
+```typescript
+import * as Video from "@moq/watch/Video";
+
+const video = new Video.Decoder({
+  track: videoTrack,
+  catalog: catalogInfo,
+  canvas: canvasElement
+});
+
+await video.start();
+
+// Video state
+video.state.subscribe(state => {
+  console.log("Frames decoded:", state.framesDecoded);
+  console.log("Frames dropped:", state.framesDropped);
+});
+```
+
+### Audio API
+
+```typescript
+import * as Audio from "@moq/watch/Audio";
+
+const audio = new Audio.Decoder({
+  track: audioTrack,
+  catalog: catalogInfo,
+  context: audioContext
+});
+
+await audio.start();
+
+// Audio state
+audio.state.subscribe(state => {
+  console.log("Samples decoded:", state.samplesDecoded);
+});
+```
+
+### Chat API
+
+```typescript
+import * as Chat from "@moq/watch/Chat";
+
+const chat = new Chat.Receiver({
+  track: chatTrack
+});
+
+chat.messages.subscribe(messages => {
+  for (const msg of messages) {
+    console.log(`${msg.author}: ${msg.text}`);
+  }
+});
+```
+
+## Complete Example
+
+Here's a complete HTML page:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MoQ Watch Example</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+    }
+    
+    moq-watch {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <moq-watch 
+    url="https://relay.quic.video"
+    fingerprint="https://relay.quic.video/fingerprint"
+    broadcast="demo">
+  </moq-watch>
+  
+  <script type="module">
+    import "@moq/watch/element";
+    
+    const watch = document.querySelector("moq-watch");
+    
+    watch.addEventListener("connected", () => {
+      console.log("Connected!");
+    });
+    
+    watch.addEventListener("error", (e) => {
+      console.error("Error:", e.detail);
+    });
+    
+    watch.addEventListener("catalog", (e) => {
+      console.log("Tracks:", e.detail.tracks);
+    });
+  </script>
+</body>
+</html>
+```
+
+## TypeScript Example
+
+```typescript
+import "@moq/watch/element";
+import type { MoqWatch } from "@moq/watch/element";
+
+// Type-safe element access
+const watch = document.querySelector("moq-watch") as MoqWatch;
+
+watch.url = "https://relay.quic.video";
+watch.fingerprint = "https://relay.quic.video/fingerprint";
+watch.broadcast = "my-stream";
+
+await watch.connect();
+```
+
+## UI Customization
+
+The watch component includes a Solid.js UI that can be customized:
+
+```typescript
+import { Watch } from "@moq/watch/ui";
+import { render } from "solid-js/web";
+
+const app = document.getElementById("app");
+
+render(() => (
+  <Watch 
+    url="https://relay.quic.video"
+    fingerprint="https://relay.quic.video/fingerprint"
+    broadcast="my-stream"
+    theme="dark"
+  />
+), app);
+```
+
+See [@moq/ui-core](/typescript/ui-core) for theming options.
+
+## Browser Support
+
+Requires:
+- WebTransport API (Chrome 97+, Edge 97+, Opera 83+)
+- WebCodecs API (Chrome 94+, Edge 94+, Opera 80+)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/publish" icon="video" href="/typescript/publish">
+    Publish streams to watch
+  </Card>
+  
+  <Card title="@moq/hang" icon="film" href="/typescript/hang">
+    Learn about the media layer
+  </Card>
+  
+  <Card title="@moq/ui-core" icon="palette" href="/typescript/ui-core">
+    Customize the UI theme
+  </Card>
+  
+  <Card title="@moq/lite" icon="code" href="/typescript/moq-lite">
+    Use the low-level protocol API
+  </Card>
+</CardGroup>

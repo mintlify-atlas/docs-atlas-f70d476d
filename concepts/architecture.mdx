@@ -1,0 +1,204 @@
+---
+title: Architecture
+description: Understand the layered protocol stack and design principles behind Moq
+---
+
+# Architecture
+
+Moq is designed as a **layered protocol stack** where each layer has a specific responsibility. This separation of concerns makes the system flexible, scalable, and easy to reason about.
+
+## The Fundamental Rule
+
+<Warning>
+**Rule 1**: The CDN/relay **MUST NOT** know anything about your application, media codecs, or even the available tracks. Everything could be fully end-to-end encrypted and the CDN wouldn't care. **No business logic allowed.**
+</Warning>
+
+This architectural constraint ensures:
+
+- **Scalability**: CDN logic stays simple and fast
+- **Security**: Content can be fully encrypted without CDN access
+- **Flexibility**: Applications can evolve without changing infrastructure
+- **Simplicity**: Relay servers operate on generic rules, not media-specific logic
+
+## The Protocol Stack
+
+Moq consists of multiple protocol layers, each building on the previous:
+
+```
+┌─────────────────┐
+│   Application   │   🏢 Your business logic
+│                 │    - authentication, non-media tracks, etc.
+├─────────────────┤
+│      hang       │   🎬 Media-specific encoding/streaming
+│                 │     - codecs, containers, catalog
+├─────────────────├
+│    moq-lite     │  🚌 Generic pub/sub transport
+│                 │     - broadcasts, tracks, groups, frames
+├─────────────────┤
+│  WebTransport   │  🌐 Browser-compatible QUIC
+│      QUIC       │     - HTTP/3 handshake, multiplexing, etc.
+└─────────────────┘
+```
+
+### Layer 1: QUIC / WebTransport
+
+The foundation layer handles all networking:
+
+- **QUIC**: Modern transport protocol with built-in encryption, multiplexing, and congestion control
+- **WebTransport**: QUIC-over-HTTP/3 for browser compatibility
+- **Benefits**: Stream multiplexing, 0-RTT connections, partial reliability
+
+This layer is provided by:
+- Browsers (native WebTransport support)
+- Quinn, Quiche, or other QUIC libraries (native applications)
+- The `web-transport` crates (Rust)
+
+### Layer 2: moq-lite
+
+The **generic pub/sub protocol** that operates on structured data without understanding media:
+
+- **Origin**: A collection of broadcasts, produced by one or more sessions
+- **Broadcast**: A collection of tracks, produced by a single publisher
+- **Track**: A collection of groups, delivered out-of-order until expired
+- **Group**: A collection of frames, delivered in-order until cancelled
+- **Frame**: Chunks of data with an upfront size
+
+Key characteristics:
+
+- **Generic**: Works with any live data (media, chat, telemetry, etc.)
+- **Efficient**: Built-in deduplication and concurrency
+- **Flexible**: Supports multiple delivery patterns via track/group metadata
+- **Simple**: CDN operates solely on header information
+
+<Info>
+Think of **moq-lite** as HTTP for live data - it doesn't care what you're streaming, just how to deliver it efficiently.
+</Info>
+
+The relay server ([moq-relay](https://github.com/moq-dev/moq/tree/main/rs/moq-relay)) operates at this layer, using rules encoded in the moq-lite header to decide how to forward content.
+
+### Layer 3: hang
+
+The **media-specific layer** that handles codecs and containers:
+
+- **Catalog**: A JSON track describing available tracks and their codec properties
+- **Container**: Wraps codec bitstreams with timestamps
+- **WebCodecs integration**: Direct compatibility with browser encoding/decoding APIs
+
+This layer is implemented as a library that clients and media servers use. It's intentionally simple and extensible - you can replace it entirely for custom use cases.
+
+<Info>
+Think of **hang** as HLS/DASH for Moq - it defines how media is packaged, while **moq-lite** is the HTTP that delivers it.
+</Info>
+
+### Layer 4: Application
+
+Your business logic and application-specific features:
+
+- **Authentication**: Who can publish or subscribe to which broadcasts
+- **Custom tracks**: Chat, telemetry, metadata, or other non-media data
+- **User interface**: Web components, mobile apps, or native applications
+- **Analytics**: Track usage, quality metrics, engagement
+
+## Data Flow
+
+Here's how data flows through the stack when streaming video:
+
+<Steps>
+  <Step title="Publisher encodes media">
+    Using WebCodecs (browser) or FFmpeg (native), video frames are encoded into codec bitstreams (H.264, AV1, etc.)
+  </Step>
+  <Step title="hang packages frames">
+    Each encoded frame is wrapped with timing information and packaged according to the hang container format
+  </Step>
+  <Step title="moq-lite publishes">
+    Frames are organized into tracks and groups, then published through a moq-lite session to the relay
+  </Step>
+  <Step title="Relay forwards">
+    The relay receives groups and forwards them to subscribers based on moq-lite metadata (priority, caching rules, etc.)
+  </Step>
+  <Step title="Subscriber receives">
+    The subscriber's moq-lite session receives groups and assembles frames
+  </Step>
+  <Step title="hang unpacks">
+    The hang layer extracts timing and codec data from the container format
+  </Step>
+  <Step title="Viewer decodes and renders">
+    WebCodecs (browser) or FFmpeg (native) decodes frames and renders to screen
+  </Step>
+</Steps>
+
+## Design Principles
+
+### 1. Separation of Concerns
+
+Each layer has a single, well-defined responsibility:
+
+- **QUIC**: Reliable, ordered delivery of bytes
+- **moq-lite**: Pub/sub with prioritization and caching semantics
+- **hang**: Media codec and container handling
+- **Application**: Business logic and user experience
+
+### 2. Dumb Network, Smart Endpoints
+
+Following the [end-to-end principle](https://en.wikipedia.org/wiki/End-to-end_principle):
+
+- The relay is as simple as possible
+- Intelligence lives in publishers and subscribers
+- Content can be encrypted end-to-end
+- Applications control their own destiny
+
+### 3. Generic + Specific
+
+The stack provides both:
+
+- **Generic infrastructure** (moq-lite) that works for any data type
+- **Specialized libraries** (hang) for common use cases (media)
+- **Freedom** to build custom solutions at any layer
+
+### 4. Browser-First
+
+Designed for the modern web:
+
+- Native WebTransport support
+- WebCodecs integration for encoding/decoding
+- Web Components for easy integration
+- Progressive enhancement for native applications
+
+## Comparison to Other Protocols
+
+| Feature | Moq | HLS/DASH | WebRTC |
+|---------|-----|----------|--------|
+| **Latency** | Sub-second | 3-30 seconds | Sub-second |
+| **Scale** | Massive (CDN) | Massive (CDN) | Limited (P2P/mesh) |
+| **Browser Support** | WebTransport | Native | Native |
+| **CDN Friendly** | Yes | Yes | No |
+| **E2E Encryption** | Yes | No | Yes |
+| **Complexity** | Medium | Low | High |
+
+## Clustering and Scale
+
+Moq relays can form clusters for global distribution:
+
+- **Root node**: Coordinates the cluster, tracks available broadcasts
+- **Leaf nodes**: Accept client connections, forward to/from root
+- **Dynamic routing**: Broadcasts can move between nodes
+- **Regional optimization**: Clients connect to nearest node
+
+See [Relay Setup](/guides/relay-setup) for clustering configuration.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-lite Protocol" icon="bus" href="/concepts/moq-lite">
+    Deep dive into the pub/sub transport layer
+  </Card>
+  <Card title="hang Media Layer" icon="film" href="/concepts/hang">
+    Learn about media-specific encoding and containers
+  </Card>
+  <Card title="Use Cases" icon="lightbulb" href="/concepts/use-cases">
+    Explore what you can build with Moq
+  </Card>
+  <Card title="Publishing Guide" icon="upload" href="/guides/publishing">
+    Start publishing your own content
+  </Card>
+</CardGroup>

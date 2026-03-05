@@ -1,0 +1,495 @@
+---
+title: Publishing Media
+description: Learn how to publish live media streams to Moq broadcasts
+---
+
+# Publishing Media
+
+This guide covers how to publish live media streams to Moq, from encoding video to broadcasting over the network.
+
+## Overview
+
+Publishing to Moq involves three main steps:
+
+<Steps>
+  <Step title="Encode media">
+    Convert raw video/audio into encoded frames using a codec (H.264, AV1, Opus, etc.)
+  </Step>
+  <Step title="Package with hang">
+    Wrap encoded frames in the hang container format with timing and codec information
+  </Step>
+  <Step title="Publish via moq-lite">
+    Send packaged frames to a moq-relay server where subscribers can receive them
+  </Step>
+</Steps>
+
+## Quick Start with CLI
+
+The fastest way to publish is using the `moq-cli` command-line tool:
+
+```bash
+# Install moq-cli
+cargo install --git https://github.com/moq-dev/moq moq-cli
+
+# Publish an fMP4 file
+ffmpeg -i input.mp4 -c copy -f mp4 \
+  -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame - | \
+moq-cli publish --url https://relay.example.com/demo --name my-stream fmp4
+```
+
+<Note>
+For local development with self-signed certificates, use `http://` instead of `https://` to disable certificate verification.
+</Note>
+
+## Publishing from Code
+
+<Tabs>
+  <Tab title="TypeScript (Browser)">
+    ### Using the Web Component
+
+    The easiest way to publish from a browser:
+
+    ```html
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <script type="module">
+          import '@moq/publish/ui'
+        </script>
+      </head>
+      <body>
+        <moq-publish 
+          url="https://relay.example.com/demo"
+          name="my-stream"
+        ></moq-publish>
+      </body>
+    </html>
+    ```
+
+    This provides a complete UI with camera/screen selection, encoding controls, and stats.
+
+    ### Using the JavaScript API
+
+    For custom integration:
+
+    ```typescript
+    import { Client } from '@moq/lite'
+    import { Publisher } from '@moq/publish'
+
+    // Connect to relay
+    const client = await Client.connect('https://relay.example.com/demo')
+
+    // Create publisher
+    const publisher = new Publisher(client, 'my-stream')
+
+    // Get camera/microphone
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1920, height: 1080, frameRate: 30 },
+      audio: { sampleRate: 48000, channelCount: 2 }
+    })
+
+    // Start publishing
+    await publisher.publish(stream)
+
+    // Stop later
+    await publisher.stop()
+    ```
+
+    ### Custom WebCodecs Pipeline
+
+    For full control over encoding:
+
+    ```typescript
+    import { Client } from '@moq/lite'
+    import { Catalog, Broadcast } from '@moq/hang'
+
+    // Connect and create broadcast
+    const client = await Client.connect('https://relay.example.com/demo')
+    const broadcast = new Broadcast(client, 'my-stream')
+
+    // Setup catalog
+    const catalog = new Catalog()
+    catalog.add({
+      name: 'video/1080p',
+      kind: 'video',
+      codec: 'avc1.64002a',
+      width: 1920,
+      height: 1080,
+      framerate: 30
+    })
+    await catalog.publish(broadcast)
+
+    // Create track
+    const track = broadcast.createTrack('video/1080p')
+
+    // Setup encoder
+    const encoder = new VideoEncoder({
+      output: (chunk, metadata) => {
+        const group = track.createGroup(chunk.timestamp)
+        const buffer = new Uint8Array(chunk.byteLength)
+        chunk.copyTo(buffer)
+        await group.write(buffer)
+        await group.close()
+      },
+      error: (e) => console.error('Encode error:', e)
+    })
+
+    encoder.configure({
+      codec: 'avc1.64002a',
+      width: 1920,
+      height: 1080,
+      bitrate: 5_000_000,
+      framerate: 30,
+      latencyMode: 'realtime'
+    })
+
+    // Encode frames
+    const frameReader = stream.getVideoTracks()[0].readable.getReader()
+    while (true) {
+      const { done, value: frame } = await frameReader.read()
+      if (done) break
+      
+      encoder.encode(frame, { keyFrame: isKeyframe })
+      frame.close()
+    }
+    ```
+
+  </Tab>
+  <Tab title="Rust (Native)">
+    ### Basic Example
+
+    ```rust
+    use moq_lite::{Origin, Session};
+    use hang::{Catalog, catalog::Track};
+    use moq_native::Client;
+
+    #[tokio::main]
+    async fn main() -> anyhow::Result<()> {
+        // Connect to relay
+        let client = Client::connect("https://relay.example.com/demo").await?;
+        let session = Session::connect(client).await?;
+
+        // Create origin and broadcast
+        let origin = Origin::new();
+        let mut broadcast = origin.create("my-stream");
+
+        // Publish broadcast to session
+        session.publish(&broadcast).await?;
+
+        // Setup catalog
+        let mut catalog = Catalog::new();
+        catalog.add(Track {
+            name: "video/1080p".into(),
+            kind: "video".into(),
+            codec: "avc1.64002a".into(),
+            width: Some(1920),
+            height: Some(1080),
+            framerate: Some(30.0),
+            bitrate: Some(5_000_000),
+            ..Default::default()
+        });
+        catalog.publish(&broadcast).await?;
+
+        // Create track
+        let mut track = broadcast.create_track("video/1080p");
+
+        // Publish groups
+        for gop in video_encoder {
+            let mut group = track.create_group(gop.timestamp);
+            
+            for frame in gop.frames {
+                group.write(frame.data).await?;
+            }
+            
+            group.close().await?;
+        }
+
+        Ok(())
+    }
+    ```
+
+    ### Using FFmpeg Input
+
+    The `moq-cli` tool provides FFmpeg integration:
+
+    ```rust
+    // Use moq-cli as a library
+    use moq_cli::{Publisher, Format};
+
+    let publisher = Publisher::new(url, broadcast_name);
+    publisher.publish_stdin(Format::Fmp4).await?;
+    ```
+
+    Or use the CLI directly:
+
+    ```bash
+    # Publish from FFmpeg
+    ffmpeg -i input.mp4 -c copy -f mp4 \
+      -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame - | \
+    moq-cli publish --url https://relay.example.com/demo --name my-stream fmp4
+
+    # Publish live from camera
+    ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast \
+      -f mp4 -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame - | \
+    moq-cli publish --url https://relay.example.com/demo --name live fmp4
+    ```
+
+  </Tab>
+</Tabs>
+
+## Container Formats
+
+Moq supports multiple container formats for wrapping encoded media:
+
+### fMP4 (Fragmented MP4 / CMAF)
+
+**Recommended** for maximum compatibility:
+
+```bash
+ffmpeg -i input.mp4 \
+  -c copy \
+  -f mp4 \
+  -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+  output.fmp4
+```
+
+**Benefits:**
+- Industry standard format
+- Compatible with existing tools
+- Supports multiple codecs
+- Works with WebCodecs
+
+### Annex-B (Raw H.264)
+
+Raw H.264 bitstream:
+
+```bash
+ffmpeg -i input.mp4 \
+  -c:v copy -an \
+  -bsf:v h264_mp4toannexb \
+  -f h264 \
+  output.h264
+```
+
+**Benefits:**
+- Minimal overhead
+- Direct from encoder
+- Simple parsing
+
+**Limitations:**
+- H.264 only
+- No timing information in stream
+
+### HLS Input
+
+Ingest from existing HLS streams:
+
+```bash
+moq-cli publish --url https://relay.example.com/demo --name stream \
+  hls --playlist https://example.com/playlist.m3u8
+```
+
+## Encoding Configuration
+
+### For Live Streaming
+
+Optimize for real-time performance:
+
+<Tabs>
+  <Tab title="FFmpeg">
+    ```bash
+    ffmpeg -f v4l2 -i /dev/video0 \
+      -c:v libx264 \
+      -preset ultrafast \
+      -tune zerolatency \
+      -g 30 \
+      -keyint_min 30 \
+      -sc_threshold 0 \
+      -b:v 3M \
+      -maxrate 3M \
+      -bufsize 6M \
+      -pix_fmt yuv420p \
+      -f mp4 \
+      -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+      -
+    ```
+
+    Key parameters:
+    - `-preset ultrafast`: Fast encoding for low latency
+    - `-tune zerolatency`: Disable lookahead
+    - `-g 30`: GOP size (1 second at 30fps)
+    - `-keyint_min 30`: Force regular keyframes
+    - `-sc_threshold 0`: Disable scene change detection
+  </Tab>
+  <Tab title="WebCodecs">
+    ```typescript
+    encoder.configure({
+      codec: 'avc1.64002a', // H.264 High Profile
+      width: 1920,
+      height: 1080,
+      bitrate: 3_000_000,
+      framerate: 30,
+      latencyMode: 'realtime',
+      bitrateMode: 'constant',
+      
+      // Hardware acceleration
+      hardwareAcceleration: 'prefer-hardware',
+      
+      // Keyframe interval (every 1 second)
+      keyInterval: 30,
+      
+      // AVC-specific
+      avc: { format: 'avc' }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+### Multiple Renditions
+
+Publish multiple quality levels for adaptive streaming:
+
+```bash
+ffmpeg -i input \
+  # 1080p rendition
+  -map 0:v -s 1920x1080 -b:v 5M -maxrate 5M -bufsize 10M \
+    -f mp4 -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+    pipe:3 3>&1 1>&2 | moq-cli publish --url $URL --name stream/1080p fmp4 &
+  
+  # 720p rendition
+  -map 0:v -s 1280x720 -b:v 2.5M -maxrate 2.5M -bufsize 5M \
+    -f mp4 -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+    pipe:4 4>&1 1>&2 | moq-cli publish --url $URL --name stream/720p fmp4 &
+  
+  # 480p rendition
+  -map 0:v -s 854x480 -b:v 1M -maxrate 1M -bufsize 2M \
+    -f mp4 -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+    pipe:5 5>&1 1>&2 | moq-cli publish --url $URL --name stream/480p fmp4 &
+
+wait
+```
+
+## Authentication
+
+Most production deployments require authentication:
+
+```bash
+# Generate a JWT token
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish "my-stream" \
+  > token.jwt
+
+# Use token in URL
+moq-cli publish --url "https://relay.example.com/demo?jwt=$(cat token.jwt)" \
+  --name my-stream fmp4
+```
+
+See [Authentication](/guides/authentication) for detailed setup.
+
+## Advanced Topics
+
+### Simulcast
+
+Publish multiple encodings of the same source:
+
+```typescript
+const layers = [
+  { width: 1920, height: 1080, bitrate: 5_000_000, name: 'high' },
+  { width: 1280, height: 720, bitrate: 2_500_000, name: 'medium' },
+  { width: 640, height: 360, bitrate: 800_000, name: 'low' }
+]
+
+for (const layer of layers) {
+  const encoder = new VideoEncoder({ ... })
+  encoder.configure({
+    codec: 'avc1.64002a',
+    width: layer.width,
+    height: layer.height,
+    bitrate: layer.bitrate,
+    scalabilityMode: 'L1T1'
+  })
+}
+```
+
+### Redundant Publishing
+
+Publish to multiple relays for redundancy:
+
+```bash
+# Split stream to multiple relays
+ffmpeg -i input.mp4 -c copy -f mp4 \
+  -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame - | \
+tee >(moq-cli publish --url https://relay1.example.com/demo --name stream fmp4) | \
+moq-cli publish --url https://relay2.example.com/demo --name stream fmp4
+```
+
+### Screen Sharing
+
+Capture and publish screen content:
+
+```typescript
+// Get screen stream
+const stream = await navigator.mediaDevices.getDisplayMedia({
+  video: {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30 }
+  }
+})
+
+// Publish (same as camera)
+const publisher = new Publisher(client, 'screen-share')
+await publisher.publish(stream)
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection refused">
+    - Check that moq-relay is running
+    - Verify the URL is correct
+    - Check firewall settings
+    - For self-signed certs, use `http://` URL prefix
+  </Accordion>
+  <Accordion title="Authentication failed">
+    - Verify JWT token is valid: `moq-token --key secret.jwk verify < token.jwt`
+    - Check token has `publish` permission for the path
+    - Ensure token hasn't expired
+  </Accordion>
+  <Accordion title="Encoding too slow">
+    - Use hardware acceleration (`-hwaccel` in FFmpeg)
+    - Reduce resolution or framerate
+    - Use faster preset (e.g., `-preset ultrafast`)
+    - Check CPU usage
+  </Accordion>
+  <Accordion title="High latency">
+    - Reduce GOP size (keyframe interval)
+    - Use `-tune zerolatency` in FFmpeg
+    - Set `latencyMode: 'realtime'` in WebCodecs
+    - Check network latency to relay
+  </Accordion>
+  <Accordion title="Choppy playback">
+    - Increase bitrate
+    - Check network upload bandwidth
+    - Reduce resolution
+    - Use CBR instead of VBR
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Watching" icon="eye" href="/guides/watching">
+    Learn how to subscribe to and watch streams
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Setup JWT authentication
+  </Card>
+  <Card title="Relay Setup" icon="server" href="/guides/relay-setup">
+    Deploy your own relay server
+  </Card>
+  <Card title="Production" icon="gauge-high" href="/guides/production">
+    Production deployment best practices
+  </Card>
+</CardGroup>

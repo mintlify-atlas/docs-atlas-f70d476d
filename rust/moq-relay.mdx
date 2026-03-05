@@ -1,0 +1,440 @@
+---
+title: moq-relay
+description: Clusterable relay server for Media over QUIC
+---
+
+`moq-relay` is a server that forwards subscriptions from publishers to subscribers, providing caching, deduplication, and fan-out at scale.
+
+## Overview
+
+moq-relay is designed to be deployed in datacenters, relaying media across multiple hops to:
+
+- **Fan-out**: Distribute content to many subscribers efficiently
+- **Deduplicate**: Cache content to reduce upstream bandwidth
+- **Cluster**: Form a mesh across regions for global scale
+- **Route**: Forward subscriptions to the optimal origin
+
+<Note>
+The relay operates on rules encoded in the moq-lite protocol header. It knows nothing about your application, media codecs, or business logic.
+</Note>
+
+## Installation
+
+```bash
+cargo install moq-relay
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/moq-dev/moq
+cd moq/rs/moq-relay
+cargo build --release
+```
+
+## Quick Start
+
+Run a local relay for development:
+
+```bash
+moq-relay dev/relay.toml
+```
+
+The relay will listen on `https://localhost:4443` with:
+- UDP for QUIC connections
+- TCP for HTTP/WebSocket fallback
+- Anonymous access enabled at `/anon` path
+
+## Configuration
+
+moq-relay is configured using a TOML file. Here's a complete example:
+
+```toml relay.toml
+# Logging configuration
+[log]
+level = "info"  # debug, info, warn, error
+
+# Server configuration
+[server]
+listen = "[::]:4443"  # Listen on all interfaces, port 4443
+
+# TLS configuration
+[server.tls]
+# Option 1: Use existing certificate
+cert = "/path/to/cert.pem"
+key = "/path/to/key.pem"
+
+# Option 2: Generate self-signed (for development)
+generate = ["localhost"]
+
+# HTTP and WebSocket server
+[web.http]
+listen = "[::]:4443"  # Same port as QUIC, but TCP
+
+# Authentication
+[auth]
+key = "dev/root.jwk"  # JWT signing key
+public = "anon"       # Allow anonymous access to /anon prefix
+
+# Clustering (optional)
+[cluster]
+root = "https://root.example.com"  # Root node for discovery
+node = "https://edge.example.com"  # This node's hostname
+```
+
+### Server Configuration
+
+<ParamField path="server.listen" type="string" required>
+  Socket address to bind for QUIC connections (UDP)
+  
+  Examples:
+  - `"[::]:4443"` - All interfaces, IPv6 and IPv4
+  - `"127.0.0.1:4443"` - Localhost only
+  - `"0.0.0.0:4443"` - All interfaces, IPv4 only
+</ParamField>
+
+<ParamField path="server.tls.cert" type="string">
+  Path to TLS certificate file (PEM format)
+</ParamField>
+
+<ParamField path="server.tls.key" type="string">
+  Path to TLS private key file (PEM format)
+</ParamField>
+
+<ParamField path="server.tls.generate" type="array">
+  Hostnames to generate self-signed certificates for (development only)
+  
+  ```toml
+  generate = ["localhost", "127.0.0.1"]
+  ```
+</ParamField>
+
+### Web Server Configuration
+
+<ParamField path="web.http.listen" type="string">
+  Socket address to bind for HTTP/WebSocket connections (TCP)
+  
+  Used for:
+  - Certificate fingerprint endpoint
+  - Track listing API
+  - WebSocket fallback
+</ParamField>
+
+## HTTP Endpoints
+
+The relay provides several HTTP endpoints for debugging and integration:
+
+### GET /certificate.sha256
+
+Returns the SHA-256 fingerprint of the TLS certificate:
+
+```bash
+curl http://localhost:4443/certificate.sha256
+```
+
+Response:
+```
+ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67:89
+```
+
+### GET /announced/*prefix
+
+Lists all announced tracks with the given prefix:
+
+```bash
+curl http://localhost:4443/announced/my-app
+```
+
+Response:
+```json
+[
+  "my-app/stream1",
+  "my-app/stream2"
+]
+```
+
+### GET /fetch/*path
+
+Fetches the latest group from a track:
+
+```bash
+curl http://localhost:4443/fetch/my-app/stream1/video
+```
+
+## Authentication
+
+The relay supports JWT-based authentication with path-based access control.
+
+### Configuration
+
+```toml
+[auth]
+# JWT signing key (symmetric or asymmetric)
+key = "dev/root.jwk"
+
+# Optional: Allow anonymous access to specific prefix
+public = "anon"
+```
+
+### Supported Algorithms
+
+**Symmetric:**
+- HMAC-SHA256 (HS256)
+- HMAC-SHA384 (HS384)
+- HMAC-SHA512 (HS512)
+
+**Asymmetric:**
+- RSA-SHA256 (RS256)
+- RSA-SHA384 (RS384)
+- RSA-SHA512 (RS512)
+- RSA-PSS-SHA256 (PS256)
+- RSA-PSS-SHA384 (PS384)
+- RSA-PSS-SHA512 (PS512)
+- ECDSA-SHA256 (ES256)
+- ECDSA-SHA384 (ES384)
+- EdDSA (EdDSA)
+
+### Token Claims
+
+Tokens must include path-based authorization:
+
+```json
+{
+  "root": "my-app",           // Full access to /my-app/*
+  "pub": ["my-app/stream1"],  // Publish to specific paths
+  "sub": ["my-app/*"]          // Subscribe to paths (wildcards allowed)
+}
+```
+
+### Generating Tokens
+
+Use the [moq-token](/rust/moq-token) CLI:
+
+```bash
+moq-token --key dev/root.jwk --root my-app
+```
+
+### Using Tokens
+
+Pass tokens as query parameters:
+
+```
+https://relay.example.com/my-app?jwt=<token>
+```
+
+See the [Authentication Guide](/concepts/authentication) for details.
+
+## Clustering
+
+Scale across multiple relays in different regions using clustering.
+
+### Architecture
+
+Clustering uses a simple root-and-leaf topology:
+
+```
+        ┌──────────┐
+        │   Root   │  (Discovery + routing)
+        └──────────┘
+         /    |    \
+        /     |     \
+   ┌────┐ ┌────┐ ┌────┐
+   │Edge│ │Edge│ │Edge│  (Regional relays)
+   └────┘ └────┘ └────┘
+```
+
+- **Root node**: Discovers cluster members and routes subscriptions
+- **Edge nodes**: Accept client traffic and consult root for routing
+
+### Configuration
+
+#### Root Node
+
+```toml
+# No cluster configuration needed - just run normally
+[server]
+listen = "[::]:4443"
+
+[server.tls]
+cert = "/path/to/cert.pem"
+key = "/path/to/key.pem"
+```
+
+#### Edge Nodes
+
+```toml
+[server]
+listen = "[::]:4443"
+
+[server.tls]
+cert = "/path/to/cert.pem"
+key = "/path/to/key.pem"
+
+[cluster]
+# Root node for discovery
+root = "https://root.example.com"
+
+# This node's public hostname (for other edges to connect)
+node = "https://edge-us-west.example.com"
+```
+
+### Command Line Arguments
+
+```bash
+# Root node (no special flags needed)
+moq-relay relay.toml
+
+# Edge node
+moq-relay relay.toml \
+  --cluster-root https://root.example.com \
+  --cluster-node https://edge.example.com
+```
+
+<ParamField path="--cluster-root" type="string">
+  Hostname/IP of the root node. If missing, this node is the root.
+</ParamField>
+
+<ParamField path="--cluster-node" type="string">
+  Public hostname/IP of this instance. Required for published broadcasts to be available on other relays.
+</ParamField>
+
+### How It Works
+
+1. Edge nodes connect to the root node
+2. Publishers announce broadcasts to their edge node
+3. Edge node advertises broadcasts to root
+4. Subscribers query their edge node
+5. Edge node consults root for routing
+6. Root directs edge to the publisher's edge
+7. Edge nodes form direct connections
+
+## Features
+
+moq-relay supports different QUIC backends:
+
+```bash
+# Default: Quinn + Iroh + WebSocket
+cargo build --release
+
+# Quinn only
+cargo build --release --no-default-features --features quinn
+
+# Quiche
+cargo build --release --no-default-features --features quiche
+
+# All backends
+cargo build --release --features iroh,quinn,quiche,websocket
+```
+
+## Running in Production
+
+### Systemd Service
+
+```ini /etc/systemd/system/moq-relay.service
+[Unit]
+Description=MoQ Relay Server
+After=network.target
+
+[Service]
+Type=notify
+User=moq
+WorkingDirectory=/opt/moq-relay
+ExecStart=/usr/local/bin/moq-relay /etc/moq-relay/relay.toml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable moq-relay
+sudo systemctl start moq-relay
+sudo systemctl status moq-relay
+```
+
+### Docker
+
+```dockerfile
+FROM rust:1.70 as builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release --bin moq-relay
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/moq-relay /usr/local/bin/
+COPY relay.toml /etc/moq-relay/
+EXPOSE 4443/udp 4443/tcp
+CMD ["moq-relay", "/etc/moq-relay/relay.toml"]
+```
+
+Build and run:
+
+```bash
+docker build -t moq-relay .
+docker run -p 4443:4443/udp -p 4443:4443/tcp moq-relay
+```
+
+## Iroh Support
+
+Enable P2P connections via [Iroh](https://github.com/n0-computer/iroh):
+
+```toml
+[iroh]
+enabled = true
+secret = "./relay-iroh-secret.key"
+```
+
+Clients can connect using:
+- `iroh://<ENDPOINT_ID>`
+- `h3+iroh://<ENDPOINT_ID>/path`
+
+See [moq-native Iroh documentation](/rust/moq-native#iroh-p2p-support) for details.
+
+## Monitoring
+
+moq-relay logs to stdout using the configured log level:
+
+```bash
+# View logs
+journalctl -u moq-relay -f
+
+# Or with Docker
+docker logs -f <container-id>
+```
+
+Example log output:
+```
+2026-03-05T10:00:00.123Z INFO moq_relay::server Listening on [::]:4443
+2026-03-05T10:00:05.456Z INFO moq_relay::connection New connection from 192.0.2.1:54321
+2026-03-05T10:00:05.789Z INFO moq_relay::session Published broadcast: my-app/stream1
+```
+
+## Resources
+
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/moq-relay) - GitHub repository
+- [Example Config](https://github.com/moq-dev/moq/blob/main/dev/relay.toml) - Full configuration example
+- [Authentication Guide](/concepts/authentication) - JWT token setup
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-token" icon="key" href="/rust/moq-token">
+    Set up authentication
+  </Card>
+  
+  <Card title="moq-cli" icon="terminal" href="/rust/moq-cli">
+    Publish media to your relay
+  </Card>
+  
+  <Card title="moq-native" icon="plug" href="/rust/moq-native">
+    Connect clients to your relay
+  </Card>
+  
+  <Card title="Authentication" icon="shield" href="/concepts/authentication">
+    Learn about JWT tokens
+  </Card>
+</CardGroup>

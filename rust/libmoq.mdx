@@ -1,0 +1,420 @@
+---
+title: libmoq
+description: C bindings for Media over QUIC
+---
+
+`libmoq` provides C bindings for the moq-lite library, enabling integration with C and C++ applications.
+
+## Overview
+
+libmoq exposes a C API for:
+
+- Creating and managing MoQ sessions
+- Publishing broadcasts and tracks
+- Writing media frames
+- Connecting to relays
+
+Built as a static library, libmoq can be linked into any C/C++ application.
+
+## Installation
+
+### Build from Source
+
+```bash
+git clone https://github.com/moq-dev/moq
+cd moq/rs/libmoq
+cargo build --release
+```
+
+This generates:
+- Static library: `target/release/libmoq.a` (Unix) or `target/release/moq.lib` (Windows)
+- C header: `target/include/moq.h`
+- pkg-config file: `target/moq.pc`
+
+### Using CMake
+
+libmoq includes a `CMakeLists.txt` for easy integration:
+
+```cmake
+add_subdirectory(libmoq)
+target_link_libraries(your_app libmoq)
+```
+
+### Using pkg-config
+
+```bash
+# Install pkg-config file
+sudo cp target/moq.pc /usr/local/lib/pkgconfig/
+
+# Compile your application
+gcc -o myapp myapp.c $(pkg-config --cflags --libs moq)
+```
+
+## C API
+
+The C API provides a simplified interface to moq-lite functionality.
+
+### Initialize Logging
+
+```c
+#include <moq.h>
+
+int main() {
+    // Set log level: "trace", "debug", "info", "warn", "error"
+    moq_log_level("info");
+    
+    return 0;
+}
+```
+
+### Create a Session
+
+Connect to a MoQ relay:
+
+```c
+#include <moq.h>
+#include <stdio.h>
+
+void session_callback(void *user_data, int32_t code) {
+    if (code == 0) {
+        printf("Session connected\n");
+    } else {
+        printf("Session error: %d\n", code);
+    }
+}
+
+int main() {
+    moq_log_level("info");
+    
+    // Connect to relay
+    const char *url = "https://localhost:4443/anon/my-app";
+    int32_t session_id = moq_session_connect(url, session_callback, NULL);
+    
+    if (session_id < 0) {
+        fprintf(stderr, "Failed to connect\n");
+        return 1;
+    }
+    
+    // Use session...
+    
+    // Close session
+    moq_session_close(session_id);
+    
+    return 0;
+}
+```
+
+### Create a Broadcast
+
+Publish a broadcast:
+
+```c
+// Create broadcast
+int32_t broadcast_id = moq_broadcast_create();
+if (broadcast_id < 0) {
+    fprintf(stderr, "Failed to create broadcast\n");
+    return 1;
+}
+
+// Publish broadcast to session
+const char *path = "my-stream";
+int32_t result = moq_broadcast_publish(broadcast_id, session_id, path);
+if (result < 0) {
+    fprintf(stderr, "Failed to publish broadcast\n");
+    return 1;
+}
+```
+
+### Create a Track
+
+Add a track to a broadcast:
+
+```c
+// Create track with format ("legacy" or "cmaf")
+int32_t track_id = moq_track_create(broadcast_id, "legacy");
+if (track_id < 0) {
+    fprintf(stderr, "Failed to create track\n");
+    return 1;
+}
+
+// Optional: Initialize track with extra data (e.g., codec config)
+const uint8_t *extra_data = ...;
+size_t extra_size = ...;
+moq_track_init(track_id, extra_data, extra_size);
+```
+
+### Write Frames
+
+Publish media frames:
+
+```c
+// Write frame with timestamp (PTS in milliseconds)
+const uint8_t *frame_data = ...;
+size_t frame_size = ...;
+uint64_t pts = 1000;  // 1 second
+
+int32_t result = moq_track_write(track_id, frame_data, frame_size, pts);
+if (result < 0) {
+    fprintf(stderr, "Failed to write frame\n");
+    return 1;
+}
+```
+
+### Cleanup
+
+Close tracks, broadcasts, and sessions:
+
+```c
+// Close track
+moq_track_close(track_id);
+
+// Close broadcast
+moq_broadcast_close(broadcast_id);
+
+// Close session
+moq_session_close(session_id);
+```
+
+## Complete Example
+
+```c
+#include <moq.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+void session_callback(void *user_data, int32_t code) {
+    if (code == 0) {
+        printf("Connected to relay\n");
+    } else {
+        fprintf(stderr, "Session error: %d\n", code);
+    }
+}
+
+int main() {
+    // Initialize logging
+    moq_log_level("info");
+    
+    // Connect to relay
+    const char *url = "https://localhost:4443/anon/test";
+    int32_t session_id = moq_session_connect(url, session_callback, NULL);
+    if (session_id < 0) {
+        fprintf(stderr, "Failed to connect\n");
+        return 1;
+    }
+    
+    // Create broadcast
+    int32_t broadcast_id = moq_broadcast_create();
+    if (broadcast_id < 0) {
+        fprintf(stderr, "Failed to create broadcast\n");
+        return 1;
+    }
+    
+    // Publish broadcast
+    moq_broadcast_publish(broadcast_id, session_id, "");
+    
+    // Create track
+    int32_t track_id = moq_track_create(broadcast_id, "legacy");
+    if (track_id < 0) {
+        fprintf(stderr, "Failed to create track\n");
+        return 1;
+    }
+    
+    // Write some frames
+    const char *messages[] = {"Hello", "World", "MoQ"};
+    for (int i = 0; i < 3; i++) {
+        const uint8_t *data = (const uint8_t *)messages[i];
+        size_t size = strlen(messages[i]);
+        uint64_t pts = i * 1000;  // 1 second intervals
+        
+        if (moq_track_write(track_id, data, size, pts) < 0) {
+            fprintf(stderr, "Failed to write frame\n");
+        } else {
+            printf("Wrote frame %d: %s\n", i, messages[i]);
+        }
+        
+        sleep(1);
+    }
+    
+    // Cleanup
+    moq_track_close(track_id);
+    moq_broadcast_close(broadcast_id);
+    moq_session_close(session_id);
+    
+    printf("Done\n");
+    return 0;
+}
+```
+
+Build and run:
+
+```bash
+# Compile
+gcc -o example example.c -L../target/release -lmoq -lpthread -ldl -lm
+
+# Run (with library path)
+LD_LIBRARY_PATH=../target/release ./example
+```
+
+## API Reference
+
+All functions are defined in `moq.h`:
+
+### Logging
+
+```c
+// Set log level ("trace", "debug", "info", "warn", "error")
+int32_t moq_log_level(const char *level);
+```
+
+### Session
+
+```c
+// Connect to relay
+int32_t moq_session_connect(
+    const char *url,
+    void (*callback)(void *user_data, int32_t code),
+    void *user_data
+);
+
+// Close session
+int32_t moq_session_close(int32_t id);
+```
+
+### Broadcast
+
+```c
+// Create broadcast
+int32_t moq_broadcast_create(void);
+
+// Close broadcast
+int32_t moq_broadcast_close(int32_t id);
+
+// Publish broadcast to session
+int32_t moq_broadcast_publish(
+    int32_t id,
+    int32_t session,
+    const char *path
+);
+```
+
+### Track
+
+```c
+// Create track (format: "legacy" or "cmaf")
+int32_t moq_track_create(
+    int32_t broadcast,
+    const char *format
+);
+
+// Close track
+int32_t moq_track_close(int32_t id);
+
+// Initialize track with extra data (optional)
+int32_t moq_track_init(
+    int32_t id,
+    const uint8_t *extra,
+    uintptr_t extra_size
+);
+
+// Write frame
+int32_t moq_track_write(
+    int32_t id,
+    const uint8_t *data,
+    uintptr_t data_size,
+    uint64_t pts
+);
+```
+
+### Return Values
+
+All functions return:
+- **≥ 0**: Success (ID or status code)
+- **< 0**: Error code
+
+## Thread Safety
+
+libmoq uses an internal Tokio runtime. All functions are thread-safe and can be called from multiple threads.
+
+## Memory Management
+
+libmoq manages memory internally:
+- No need to free returned IDs
+- Input buffers are copied
+- Call close functions to release resources
+
+## Building Static Library
+
+The library is built as a static archive:
+
+```toml Cargo.toml
+[lib]
+crate-type = ["staticlib"]
+```
+
+To link, include these system libraries:
+- **Linux**: `-lpthread -ldl -lm`
+- **macOS**: `-framework Security -framework Foundation`
+- **Windows**: `ws2_32.lib userenv.lib`
+
+## C++ Integration
+
+Use `extern "C"` in C++ code:
+
+```cpp
+extern "C" {
+    #include <moq.h>
+}
+
+int main() {
+    moq_log_level("info");
+    
+    auto session_id = moq_session_connect(
+        "https://localhost:4443/anon/test",
+        [](void*, int32_t code) {
+            std::cout << "Connected: " << code << std::endl;
+        },
+        nullptr
+    );
+    
+    // Use session...
+    
+    moq_session_close(session_id);
+    return 0;
+}
+```
+
+## Limitations
+
+- **Publish only**: libmoq currently supports publishing, not subscribing
+- **Simplified API**: Some advanced moq-lite features are not exposed
+- **Blocking**: Some operations may block the calling thread
+
+For full functionality, use the Rust API directly.
+
+## Resources
+
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/libmoq) - GitHub repository
+- [Header File](https://github.com/moq-dev/moq/blob/main/rs/libmoq/src/lib.rs) - API definitions
+- [CMakeLists.txt](https://github.com/moq-dev/moq/blob/main/rs/libmoq/CMakeLists.txt) - CMake integration
+- [moq-lite](/rust/moq-lite) - Underlying Rust library
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-lite" icon="layer-group" href="/rust/moq-lite">
+    Learn about the full Rust API
+  </Card>
+  
+  <Card title="hang" icon="film" href="/rust/hang">
+    Media-specific functionality
+  </Card>
+  
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Deploy a relay server
+  </Card>
+  
+  <Card title="Getting Started" icon="rocket" href="/rust/getting-started">
+    Build with Rust SDK
+  </Card>
+</CardGroup>

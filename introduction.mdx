@@ -1,0 +1,85 @@
+---
+title: Introduction to Moq
+description: Learn about Media over QUIC, a next-generation live media protocol for real-time delivery at massive scale
+---
+
+# Introduction to Moq
+
+[Media over QUIC](https://moq.dev) (MoQ) is a next-generation live media protocol that provides **real-time latency** at **massive scale**. Built using modern web technologies, MoQ delivers WebRTC-like latency without the constraints of WebRTC.
+
+## What is Moq?
+
+Moq is a live media delivery protocol built on top of QUIC that gives you full control over your media pipeline. The core networking is delegated to a QUIC library, but the rest is in application-space, allowing you to customize every aspect of your media delivery.
+
+<Note>
+This project is a [fork](https://moq.dev/blog/transfork) of the [IETF MoQ specification](https://datatracker.ietf.org/group/moq/documents/). The focus is narrower, emphasizing simplicity and deployability over feature completeness.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Real-time Latency" icon="rocket">
+    Uses QUIC for prioritization and partial reliability to achieve sub-second latency
+  </Card>
+  <Card title="Massive Scale" icon="chart-line">
+    Designed for fan-out and supports cross-region clustering for global distribution
+  </Card>
+  <Card title="Modern Web" icon="globe">
+    Built with WebTransport, WebCodecs, and WebAudio for seamless browser integration
+  </Card>
+  <Card title="Multi-language" icon="code">
+    Both Rust (native) and TypeScript (web) libraries with similar APIs
+  </Card>
+  <Card title="Generic Protocol" icon="puzzle-piece">
+    Works with any live data, not just media - includes text chat as an example
+  </Card>
+  <Card title="Full Control" icon="sliders">
+    Application-space implementation gives you complete control over your pipeline
+  </Card>
+</CardGroup>
+
+## Why Moq?
+
+Traditional streaming protocols like HLS and DASH were designed for on-demand content and add significant latency. WebRTC provides real-time latency but is complex to scale and doesn't work well with CDNs. Moq bridges this gap by:
+
+- **Leveraging QUIC**: Using HTTP/3's underlying transport for reliability and performance
+- **CDN-friendly**: Designed to work with edge networks for global scale
+- **Simple Architecture**: Focused on the essential features needed for production
+- **Browser-native**: Works directly in browsers via WebTransport
+
+## The Fork from IETF MoQ
+
+While the IETF is developing a comprehensive MoQ specification, this project takes a more focused approach. The goal is to ship a working, deployable solution that solves real-world problems today. This means:
+
+- Simplified protocol with fewer moving parts
+- Focus on practical use cases over theoretical completeness
+- Faster iteration and deployment cycles
+- Production-ready stability
+
+## Use Cases
+
+Moq is ideal for:
+
+- **Live streaming** with real-time interaction
+- **Video conferencing** at scale
+- **Live sports and events** with minimal delay
+- **Interactive broadcasts** with chat and reactions
+- **Contribution feeds** from field to studio
+- **Low-latency distribution** to global audiences
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="play" href="/quickstart">
+    Get up and running with Moq in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Moq libraries for Rust or TypeScript
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand how Moq is structured
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Learn how to publish media to Moq
+  </Card>
+</CardGroup>

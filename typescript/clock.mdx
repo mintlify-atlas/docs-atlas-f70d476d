@@ -1,0 +1,400 @@
+---
+title: "@moq/clock"
+description: "Clock synchronization example for MoQ"
+---
+
+**[@moq/clock](https://www.npmjs.com/package/@moq/clock)** is an example application demonstrating clock synchronization using the MoQ protocol.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install -g @moq/clock
+```
+
+```bash bun
+bun add -g @moq/clock
+```
+
+```bash pnpm
+pnpm add -g @moq/clock
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.1.0
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `@moq/lite`, WebTransport polyfill for Node.js
+
+## Overview
+
+The clock example demonstrates:
+
+- Publishing time updates over MoQ
+- Subscribing to time updates
+- Clock synchronization patterns
+- Using MoQ in Node.js applications
+
+## CLI Usage
+
+### Publishing the Clock
+
+Publish the current time to a broadcast:
+
+```bash
+moq-clock publish \
+  --url https://relay.quic.video \
+  --broadcast clock \
+  --interval 1000
+```
+
+**Options:**
+
+- `--url` - WebTransport URL of the MoQ relay
+- `--broadcast` - Name of the broadcast (default: "clock")
+- `--interval` - Update interval in milliseconds (default: 1000)
+- `--token` - JWT authentication token (if required)
+
+### Subscribing to the Clock
+
+Subscribe to time updates:
+
+```bash
+moq-clock subscribe \
+  --url https://relay.quic.video \
+  --broadcast clock
+```
+
+**Options:**
+
+- `--url` - WebTransport URL of the MoQ relay
+- `--broadcast` - Name of the broadcast (default: "clock")
+- `--token` - JWT authentication token (if required)
+
+## Programmatic Usage
+
+### Publishing Time
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { Broadcast, Track } from "@moq/lite";
+import { WebTransport } from "@fails-components/webtransport";
+
+// Make WebTransport available for Node.js
+globalThis.WebTransport = WebTransport as any;
+
+// Connect to relay
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint"
+});
+
+// Publish broadcast
+const publisher = await conn.publish("clock");
+const track = new Track("time");
+await publisher.announce(track);
+
+// Publish time updates
+const encoder = new TextEncoder();
+
+setInterval(async () => {
+  const now = new Date().toISOString();
+  const data = encoder.encode(now);
+  
+  const group = track.appendGroup();
+  await group.write(data);
+  await group.close();
+  
+  console.log("Published:", now);
+}, 1000);
+```
+
+### Subscribing to Time
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { WebTransport } from "@fails-components/webtransport";
+
+// Make WebTransport available for Node.js
+globalThis.WebTransport = WebTransport as any;
+
+// Connect to relay
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint"
+});
+
+// Subscribe to broadcast
+const subscriber = await conn.subscribe("clock");
+
+// Wait for track announcement
+const announced = await subscriber.announced();
+if (!announced) throw new Error("broadcast closed");
+
+console.log("Track:", announced.track.name);
+
+// Subscribe to track
+const track = await subscriber.subscribe(announced.track);
+
+// Read time updates
+const decoder = new TextDecoder();
+
+for await (const group of track.groups()) {
+  for await (const frame of group.frames()) {
+    const time = decoder.decode(frame);
+    const local = new Date().toISOString();
+    
+    console.log("Remote:", time);
+    console.log("Local: ", local);
+    console.log("---");
+  }
+}
+```
+
+## Clock Synchronization
+
+The example demonstrates a simple clock synchronization pattern:
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+
+interface TimeMessage {
+  timestamp: number;  // Server timestamp in microseconds
+  sequence: number;   // Message sequence number
+}
+
+// Publisher
+let sequence = 0;
+
+setInterval(async () => {
+  const message: TimeMessage = {
+    timestamp: performance.now() * 1000, // Convert to microseconds
+    sequence: sequence++
+  };
+  
+  const data = new TextEncoder().encode(JSON.stringify(message));
+  const group = track.appendGroup();
+  await group.write(data);
+  await group.close();
+}, 1000);
+
+// Subscriber
+let offset = 0; // Estimated time offset
+
+for await (const group of track.groups()) {
+  const receiveTime = performance.now() * 1000;
+  
+  for await (const frame of group.frames()) {
+    const message: TimeMessage = JSON.parse(
+      new TextDecoder().decode(frame)
+    );
+    
+    // Simple offset calculation (doesn't account for network delay)
+    offset = message.timestamp - receiveTime;
+    
+    console.log("Time offset:", offset / 1000, "ms");
+  }
+}
+
+// Get synchronized time
+function getSyncedTime(): number {
+  return performance.now() * 1000 + offset;
+}
+```
+
+## Advanced Synchronization
+
+For more accurate synchronization, implement NTP-like algorithms:
+
+```typescript
+interface TimeSync {
+  t1: number; // Client send time
+  t2: number; // Server receive time
+  t3: number; // Server send time
+  t4: number; // Client receive time
+}
+
+// Calculate offset and round-trip delay
+function calculateSync(sync: TimeSync) {
+  const offset = ((sync.t2 - sync.t1) + (sync.t3 - sync.t4)) / 2;
+  const delay = (sync.t4 - sync.t1) - (sync.t3 - sync.t2);
+  
+  return { offset, delay };
+}
+
+// Maintain a moving average of offsets
+class ClockSync {
+  private offsets: number[] = [];
+  private maxSamples = 10;
+  
+  addSample(offset: number) {
+    this.offsets.push(offset);
+    if (this.offsets.length > this.maxSamples) {
+      this.offsets.shift();
+    }
+  }
+  
+  getOffset(): number {
+    if (this.offsets.length === 0) return 0;
+    return this.offsets.reduce((a, b) => a + b) / this.offsets.length;
+  }
+  
+  getSyncedTime(): number {
+    return performance.now() * 1000 + this.getOffset();
+  }
+}
+```
+
+## Use Cases
+
+The clock example demonstrates patterns useful for:
+
+- **Distributed systems**: Synchronize time across services
+- **Live events**: Coordinate timing for multiple viewers
+- **Multiplayer games**: Synchronize game state timestamps
+- **Media playback**: Align playback across devices
+- **IoT devices**: Coordinate sensor readings
+
+## Complete Example
+
+Here's a complete Node.js application:
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { Broadcast, Track } from "@moq/lite";
+import { WebTransport } from "@fails-components/webtransport";
+
+// Enable WebTransport in Node.js
+globalThis.WebTransport = WebTransport as any;
+
+const RELAY_URL = "https://relay.quic.video";
+const BROADCAST_NAME = "clock";
+
+async function publisher() {
+  const conn = await Connection.connect({
+    url: RELAY_URL,
+    fingerprint: `${RELAY_URL}/fingerprint`
+  });
+  
+  const publisher = await conn.publish(BROADCAST_NAME);
+  const track = new Track("time");
+  await publisher.announce(track);
+  
+  console.log("Publishing clock updates...");
+  
+  const encoder = new TextEncoder();
+  let sequence = 0;
+  
+  setInterval(async () => {
+    const message = {
+      timestamp: Date.now(),
+      sequence: sequence++,
+      iso: new Date().toISOString()
+    };
+    
+    const data = encoder.encode(JSON.stringify(message));
+    const group = track.appendGroup();
+    await group.write(data);
+    await group.close();
+    
+    console.log(`Published #${sequence}: ${message.iso}`);
+  }, 1000);
+}
+
+async function subscriber() {
+  const conn = await Connection.connect({
+    url: RELAY_URL,
+    fingerprint: `${RELAY_URL}/fingerprint`
+  });
+  
+  const subscriber = await conn.subscribe(BROADCAST_NAME);
+  
+  console.log("Waiting for clock updates...");
+  
+  const announced = await subscriber.announced();
+  if (!announced) throw new Error("broadcast closed");
+  
+  const track = await subscriber.subscribe(announced.track);
+  const decoder = new TextDecoder();
+  
+  for await (const group of track.groups()) {
+    for await (const frame of group.frames()) {
+      const message = JSON.parse(decoder.decode(frame));
+      const delay = Date.now() - message.timestamp;
+      
+      console.log(`Received #${message.sequence}: ${message.iso}`);
+      console.log(`Delay: ${delay}ms`);
+    }
+  }
+}
+
+// Run publisher or subscriber
+const mode = process.argv[2];
+
+if (mode === "publish") {
+  publisher().catch(console.error);
+} else if (mode === "subscribe") {
+  subscriber().catch(console.error);
+} else {
+  console.log("Usage: node clock.js [publish|subscribe]");
+}
+```
+
+Run it:
+
+```bash
+# Terminal 1: Publisher
+node clock.js publish
+
+# Terminal 2: Subscriber
+node clock.js subscribe
+```
+
+## Node.js Setup
+
+For Node.js applications, install the WebTransport polyfill:
+
+<CodeGroup>
+
+```bash npm
+npm install @fails-components/webtransport \
+            @fails-components/webtransport-transport-http3-quiche
+```
+
+```bash bun
+bun add @fails-components/webtransport \
+        @fails-components/webtransport-transport-http3-quiche
+```
+
+</CodeGroup>
+
+Import and configure:
+
+```typescript
+import { WebTransport } from "@fails-components/webtransport";
+globalThis.WebTransport = WebTransport as any;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/lite" icon="code" href="/typescript/moq-lite">
+    Learn the core protocol used by the clock
+  </Card>
+  
+  <Card title="@moq/token" icon="key" href="/typescript/token">
+    Add authentication to your clock
+  </Card>
+  
+  <Card title="Examples" icon="book" href="https://github.com/moq-dev/moq/tree/main/js/clock">
+    View the source code
+  </Card>
+  
+  <Card title="Node.js Guide" icon="terminal" href="/typescript/getting-started">
+    Set up Node.js for MoQ
+  </Card>
+</CardGroup>

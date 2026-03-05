@@ -1,0 +1,592 @@
+---
+title: Authentication
+description: Secure your Moq broadcasts with JWT token-based authentication
+---
+
+# Authentication
+
+Moq uses **JWT (JSON Web Token)** based authentication to control who can publish and subscribe to broadcasts. This guide covers how to set up and use authentication in your Moq deployment.
+
+## Overview
+
+Moq's authentication system provides:
+
+- **Path-based authorization**: Control access to specific broadcast paths
+- **Publish/Subscribe permissions**: Separate permissions for publishers and subscribers
+- **Token-based**: No server-side session management needed
+- **Flexible key algorithms**: Support for both symmetric (HMAC) and asymmetric (RSA, ECDSA, EdDSA) keys
+- **Anonymous access**: Optional public paths that don't require authentication
+
+## Quick Start
+
+Generate a key and create tokens in three steps:
+
+<Steps>
+  <Step title="Generate a signing key">
+    ```bash
+    # Install moq-token CLI
+    cargo install --git https://github.com/moq-dev/moq moq-token-cli
+
+    # Generate a symmetric key (HMAC-SHA256)
+    moq-token --key secret.jwk generate
+    ```
+  </Step>
+  <Step title="Configure the relay">
+    ```toml relay.toml
+    [auth]
+    key = "secret.jwk"
+    public = "demo"  # Allow anonymous access to /demo prefix
+    ```
+  </Step>
+  <Step title="Generate tokens for clients">
+    ```bash
+    # Token for publishing to demo/my-stream
+    moq-token --key secret.jwk sign \
+      --root "demo" \
+      --publish "my-stream" \
+      > publisher.jwt
+
+    # Token for subscribing to demo/*
+    moq-token --key secret.jwk sign \
+      --root "demo" \
+      --subscribe "" \
+      > subscriber.jwt
+    ```
+  </Step>
+</Steps>
+
+## Authentication Flow
+
+Here's how authentication works in Moq:
+
+```
+1. Client generates/receives JWT token
+2. Client connects to relay with token in URL: ?jwt=<token>
+3. Relay validates token signature
+4. Relay checks permissions for requested operation
+5. If valid, connection proceeds; otherwise, rejected
+```
+
+<Info>
+Tokens are passed via **query parameters** in the WebTransport URL, not as headers. This is because WebTransport doesn't support custom headers.
+</Info>
+
+## Key Generation
+
+moq-token supports multiple cryptographic algorithms:
+
+### Symmetric Keys (HMAC)
+
+**Recommended for simple deployments** where the relay is the only verifier:
+
+<CodeGroup>
+  ```bash HS256 (default)
+  moq-token --key secret.jwk generate --algorithm HS256
+  ```
+
+  ```bash HS384
+  moq-token --key secret.jwk generate --algorithm HS384
+  ```
+
+  ```bash HS512
+  moq-token --key secret.jwk generate --algorithm HS512
+  ```
+</CodeGroup>
+
+**Pros:**
+- Simple setup (one key)
+- Fast signing and verification
+- Smaller key size
+
+**Cons:**
+- Same key used for signing and verification
+- Must keep key secret from clients
+- Can't delegate token generation safely
+
+### Asymmetric Keys (RSA, ECDSA, EdDSA)
+
+**Recommended for distributed systems** where token generation is separate from verification:
+
+<CodeGroup>
+  ```bash RS256 (RSA + SHA256)
+  moq-token --key private.jwk generate --algorithm RS256 --public public.jwk
+  ```
+
+  ```bash ES256 (ECDSA P-256)
+  moq-token --key private.jwk generate --algorithm ES256 --public public.jwk
+  ```
+
+  ```bash EdDSA (Ed25519)
+  moq-token --key private.jwk generate --algorithm EdDSA --public public.jwk
+  ```
+</CodeGroup>
+
+**Pros:**
+- Public key can be shared openly
+- Private key only needed for signing
+- Can delegate signing to auth service
+- Multiple relays can verify with same public key
+
+**Cons:**
+- More complex setup (two keys)
+- Slightly slower operations
+- Larger key size
+
+<Tip>
+For production deployments with multiple relays, use **ES256** (ECDSA) for a good balance of security, performance, and key size.
+</Tip>
+
+### Key Rotation
+
+Support multiple keys with key IDs:
+
+```bash
+# Generate keys with IDs
+moq-token --key secret-v1.jwk generate --algorithm HS256 --id "v1"
+moq-token --key secret-v2.jwk generate --algorithm HS256 --id "v2"
+
+# New tokens use v2, but relay accepts both
+```
+
+Relay configuration:
+
+```toml
+[auth]
+keys = ["secret-v1.jwk", "secret-v2.jwk"]
+```
+
+## Token Claims
+
+JWT tokens contain **claims** that define permissions:
+
+### Root Path
+
+The base path for all operations:
+
+```bash
+moq-token --key secret.jwk sign --root "demo"
+```
+
+- Client connects to `/demo` on the relay
+- All broadcast paths are relative to this root
+- Empty string (`""`) means root of the relay
+
+### Publish Permissions
+
+Control which broadcasts the client can publish:
+
+```bash
+# Publish to demo/my-stream only
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish "my-stream"
+
+# Publish to any demo/streams/* path
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish "streams"
+
+# Publish to anything under demo/
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish ""
+
+# No publishing allowed (omit --publish)
+moq-token --key secret.jwk sign \
+  --root "demo"
+```
+
+### Subscribe Permissions
+
+Control which broadcasts the client can subscribe to:
+
+```bash
+# Subscribe to demo/my-stream only
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --subscribe "my-stream"
+
+# Subscribe to any demo/streams/* path
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --subscribe "streams"
+
+# Subscribe to anything under demo/
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --subscribe ""
+
+# No subscribing allowed (omit --subscribe)
+moq-token --key secret.jwk sign \
+  --root "demo"
+```
+
+### Multiple Permissions
+
+You can specify multiple paths for each permission type:
+
+```bash
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish "my-stream" \
+  --publish "my-other-stream" \
+  --subscribe "streams" \
+  --subscribe "archives"
+```
+
+### Token Expiration
+
+Set an expiration time for tokens:
+
+```bash
+# Expires in 1 hour (3600 seconds from now)
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish "my-stream" \
+  --expires $(date -d '+1 hour' +%s)
+
+# Expires at specific timestamp
+moq-token --key secret.jwk sign \
+  --root "demo" \
+  --publish "my-stream" \
+  --expires 1735689600  # Jan 1, 2025
+```
+
+<Warning>
+Always set expiration times for tokens in production. Tokens without expiration are valid forever!
+</Warning>
+
+### Cluster Tokens
+
+Special tokens for relay-to-relay communication:
+
+```bash
+moq-token --key secret.jwk sign \
+  --root "" \
+  --publish "" \
+  --subscribe "" \
+  --cluster
+```
+
+The `--cluster` flag marks this as a cluster node, which changes announcement behavior.
+
+## Relay Configuration
+
+### Basic Authentication
+
+```toml relay.toml
+[auth]
+# Path to signing key
+key = "secret.jwk"
+
+# Optional: Allow anonymous access to specific prefix
+public = "demo"
+```
+
+### Multiple Keys
+
+For key rotation:
+
+```toml relay.toml
+[auth]
+keys = [
+  "secret-v1.jwk",
+  "secret-v2.jwk"
+]
+public = "demo"
+```
+
+### Asymmetric Keys
+
+When using asymmetric cryptography, the relay only needs the public key:
+
+```toml relay.toml
+[auth]
+key = "public.jwk"  # Public key for verification
+public = "demo"
+```
+
+Keep `private.jwk` on your auth server, not the relay.
+
+### Anonymous Access
+
+Allow unauthenticated access to specific paths:
+
+```toml relay.toml
+[auth]
+key = "secret.jwk"
+public = "demo"  # Anyone can access /demo without a token
+```
+
+With this config:
+- `/demo/*` - No token required
+- `/private/*` - Token required
+- `/` - Token required
+
+## Using Tokens
+
+### In URLs
+
+Pass tokens via query parameter:
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import { Client } from '@moq/lite'
+
+    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+    const url = `https://relay.example.com/demo?jwt=${token}`
+
+    const client = await Client.connect(url)
+    ```
+  </Tab>
+  <Tab title="Rust">
+    ```rust
+    use moq_native::Client;
+
+    let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
+    let url = format!("https://relay.example.com/demo?jwt={}", token);
+
+    let client = Client::connect(&url).await?;
+    ```
+  </Tab>
+  <Tab title="CLI">
+    ```bash
+    # Read token from file
+    moq-cli publish \
+      --url "https://relay.example.com/demo?jwt=$(cat token.jwt)" \
+      --name my-stream \
+      fmp4
+    ```
+  </Tab>
+</Tabs>
+
+### Token Generation Service
+
+For production, generate tokens on your backend:
+
+<Tabs>
+  <Tab title="TypeScript (Node/Bun)">
+    ```typescript
+    import { Key, Claims } from '@moq/token'
+
+    // Load key
+    const key = await Key.fromFile('secret.jwk')
+
+    // Create claims
+    const claims: Claims = {
+      root: 'demo',
+      publish: ['my-stream'],
+      subscribe: [],
+      expires: Date.now() + 3600000, // 1 hour
+      cluster: false
+    }
+
+    // Sign token
+    const token = await key.encode(claims)
+
+    // Return to client
+    return { token }
+    ```
+  </Tab>
+  <Tab title="Rust">
+    ```rust
+    use moq_token::{Key, Claims};
+    use std::time::{SystemTime, Duration};
+
+    // Load key
+    let key = Key::from_file("secret.jwk")?;
+
+    // Create claims
+    let claims = Claims {
+        root: "demo".into(),
+        publish: vec!["my-stream".into()],
+        subscribe: vec![],
+        expires: Some(SystemTime::now() + Duration::from_secs(3600)),
+        cluster: false,
+        issued: Some(SystemTime::now()),
+    };
+
+    // Sign token
+    let token = key.encode(&claims)?;
+
+    // Return to client
+    Ok(token)
+    ```
+  </Tab>
+</Tabs>
+
+## Token Verification
+
+Verify a token's contents without connecting:
+
+```bash
+echo "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." | \
+moq-token --key secret.jwk verify
+```
+
+Output:
+```rust
+Claims {
+    root: "demo",
+    publish: ["my-stream"],
+    subscribe: [],
+    expires: Some(SystemTime { ... }),
+    cluster: false,
+    issued: Some(SystemTime { ... }),
+}
+```
+
+## Security Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use HTTPS/TLS" icon="lock">
+    Always use TLS for production to prevent token interception
+  </Card>
+  <Card title="Short Expiration" icon="clock">
+    Use short-lived tokens (minutes to hours, not days)
+  </Card>
+  <Card title="Principle of Least Privilege" icon="shield">
+    Grant only the minimum permissions needed
+  </Card>
+  <Card title="Rotate Keys" icon="rotate">
+    Periodically rotate signing keys using key IDs
+  </Card>
+  <Card title="Secure Key Storage" icon="key">
+    Never commit keys to version control; use secrets management
+  </Card>
+  <Card title="Validate Server-Side" icon="server">
+    Generate tokens on your backend, not in client code
+  </Card>
+</CardGroup>
+
+### Never Do This
+
+```typescript
+// ❌ DON'T: Embed signing key in client code
+const key = 'secret-key-12345'
+const token = signToken(key, claims) // Client can generate any token!
+
+// ✅ DO: Request token from your backend
+const response = await fetch('/api/token', {
+  method: 'POST',
+  body: JSON.stringify({ userId, action: 'publish' })
+})
+const { token } = await response.json()
+```
+
+## Example: Full Auth Flow
+
+A complete example of authentication in a real application:
+
+### 1. Backend: Token Generation
+
+```typescript backend.ts
+import { Key, Claims } from '@moq/token'
+import express from 'express'
+
+const app = express()
+const key = await Key.fromFile('secret.jwk')
+
+app.post('/api/moq-token', async (req, res) => {
+  // Authenticate user (your existing auth)
+  const user = await authenticateUser(req)
+  if (!user) return res.status(401).send('Unauthorized')
+
+  // Determine permissions based on user
+  const claims: Claims = {
+    root: 'streams',
+    publish: [`user-${user.id}`], // Can only publish to own stream
+    subscribe: [''], // Can subscribe to all streams
+    expires: Date.now() + 3600000, // 1 hour
+    cluster: false
+  }
+
+  // Sign and return token
+  const token = await key.encode(claims)
+  res.json({ token, relayUrl: 'https://relay.example.com' })
+})
+```
+
+### 2. Frontend: Request Token
+
+```typescript frontend.ts
+import { Client } from '@moq/lite'
+import { Publisher } from '@moq/publish'
+
+// Get token from backend
+const response = await fetch('/api/moq-token', {
+  method: 'POST',
+  credentials: 'include' // Send cookies for auth
+})
+const { token, relayUrl } = await response.json()
+
+// Connect to relay with token
+const url = `${relayUrl}/streams?jwt=${token}`
+const client = await Client.connect(url)
+
+// Publish stream
+const publisher = new Publisher(client, `user-${userId}`)
+await publisher.publish(stream)
+```
+
+### 3. Relay Configuration
+
+```toml relay.toml
+[server]
+listen = "[::]:443"
+
+[server.tls]
+cert = "cert.pem"
+key = "key.pem"
+
+[auth]
+key = "secret.jwk"
+# No public paths - all streams require auth
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Invalid signature error">
+    - Verify you're using the correct key file
+    - For asymmetric keys, ensure relay has the public key
+    - Check key ID matches if using multiple keys
+    - Verify key hasn't been rotated/changed
+  </Accordion>
+  <Accordion title="Permission denied">
+    - Check token claims with `moq-token verify`
+    - Verify `root` path matches connection URL
+    - Ensure `publish` or `subscribe` arrays include the requested path
+    - Check for leading/trailing slashes (should be omitted)
+  </Accordion>
+  <Accordion title="Token expired">
+    - Check system clock is synchronized (NTP)
+    - Verify `--expires` timestamp is in the future
+    - Consider clock skew tolerance (~5 minutes)
+    - Use shorter token lifetimes and refresh
+  </Accordion>
+  <Accordion title="Token not accepted by relay">
+    - Verify relay has `[auth]` section configured
+    - Check relay logs for specific error
+    - Ensure token is passed as `?jwt=` query parameter
+    - Test with `moq-token verify` first
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Relay Setup" icon="server" href="/guides/relay-setup">
+    Configure your relay server
+  </Card>
+  <Card title="Production" icon="gauge-high" href="/guides/production">
+    Production deployment guide
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Publish authenticated streams
+  </Card>
+  <Card title="Watching" icon="eye" href="/guides/watching">
+    Subscribe with authentication
+  </Card>
+</CardGroup>

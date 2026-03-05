@@ -1,0 +1,554 @@
+---
+title: Watching Streams
+description: Learn how to subscribe to and watch Moq broadcasts
+---
+
+# Watching Streams
+
+This guide covers how to subscribe to and watch Moq broadcasts, from simple web components to custom players.
+
+## Quick Start: Web Component
+
+The easiest way to watch a Moq stream is with the `<moq-watch>` Web Component:
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="module">
+      import '@moq/watch/ui'
+    </script>
+  </head>
+  <body>
+    <moq-watch 
+      url="https://relay.moq.dev/demo" 
+      name="bbb"
+    ></moq-watch>
+  </body>
+</html>
+```
+
+This provides a complete player with:
+- Video/audio playback
+- Quality selection
+- Volume control
+- Playback statistics
+- Error handling
+
+<Tip>
+The `@moq/watch/ui` import includes a SolidJS-based UI. For a headless component without UI, use `@moq/watch/element`.
+</Tip>
+
+## Installation
+
+<Tabs>
+  <Tab title="TypeScript/JavaScript">
+    ```bash npm
+    npm install @moq/watch @moq/hang @moq/lite
+    ```
+
+    ```bash bun
+    bun add @moq/watch @moq/hang @moq/lite
+    ```
+
+    ```bash pnpm
+    pnpm add @moq/watch @moq/hang @moq/lite
+    ```
+  </Tab>
+  <Tab title="Rust">
+    ```toml Cargo.toml
+    [dependencies]
+    moq-lite = "0.15.0"
+    hang = "0.15.1"
+    moq-native = "0.5"
+    ```
+  </Tab>
+</Tabs>
+
+## Web Component API
+
+### Basic Usage
+
+```html
+<moq-watch 
+  url="https://relay.example.com/demo"
+  name="my-stream"
+  autoplay
+></moq-watch>
+```
+
+### Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `url` | string | WebTransport URL of the relay |
+| `name` | string | Name/path of the broadcast |
+| `autoplay` | boolean | Start playing automatically |
+| `muted` | boolean | Start muted |
+| `controls` | boolean | Show player controls (default: true) |
+
+### Methods
+
+```typescript
+const watch = document.querySelector('moq-watch')
+
+// Play/pause
+await watch.play()
+await watch.pause()
+
+// Volume control
+watch.volume = 0.5  // 0.0 to 1.0
+watch.muted = true
+
+// Quality selection
+const tracks = watch.getTracks()
+watch.selectTrack('video/720p')
+
+// Get statistics
+const stats = watch.getStats()
+console.log('Bitrate:', stats.bitrate)
+console.log('Latency:', stats.latency)
+```
+
+### Events
+
+```typescript
+const watch = document.querySelector('moq-watch')
+
+// Playback events
+watch.addEventListener('play', () => console.log('Playing'))
+watch.addEventListener('pause', () => console.log('Paused'))
+watch.addEventListener('ended', () => console.log('Ended'))
+
+// Connection events
+watch.addEventListener('connected', () => console.log('Connected'))
+watch.addEventListener('disconnected', () => console.log('Disconnected'))
+
+// Error events
+watch.addEventListener('error', (e) => console.error('Error:', e.detail))
+
+// Track events
+watch.addEventListener('tracks', (e) => console.log('Tracks:', e.detail))
+```
+
+## JavaScript API
+
+For custom player implementation:
+
+<Tabs>
+  <Tab title="TypeScript">
+    ### Basic Example
+
+    ```typescript
+    import { Client } from '@moq/lite'
+    import { Catalog, Watch } from '@moq/hang'
+
+    // Connect to relay
+    const client = await Client.connect('https://relay.example.com/demo')
+
+    // Subscribe to broadcast
+    const broadcast = await client.subscribe('my-stream')
+
+    // Read catalog to discover tracks
+    const catalog = await Catalog.fetch(broadcast)
+    console.log('Available tracks:', catalog.tracks())
+
+    // Create watcher
+    const watch = new Watch(broadcast, catalog)
+
+    // Attach to video element
+    const video = document.querySelector('video')
+    watch.attach(video)
+
+    // Start playback
+    await watch.play()
+    ```
+
+    ### Custom Track Selection
+
+    ```typescript
+    // Get available video tracks
+    const videoTracks = catalog.tracks()
+      .filter(t => t.kind === 'video')
+      .sort((a, b) => b.bitrate - a.bitrate)
+
+    console.log('Available qualities:')
+    for (const track of videoTracks) {
+      console.log(`  ${track.name}: ${track.width}x${track.height} @ ${track.bitrate}bps`)
+    }
+
+    // Select specific quality
+    await watch.selectTrack('video/720p')
+
+    // Or select by resolution
+    const hd = videoTracks.find(t => t.height >= 720)
+    if (hd) {
+      await watch.selectTrack(hd.name)
+    }
+    ```
+
+    ### Manual Decoding
+
+    For complete control:
+
+    ```typescript
+    import { Client } from '@moq/lite'
+    import { Catalog } from '@moq/hang'
+
+    const client = await Client.connect('https://relay.example.com/demo')
+    const broadcast = await client.subscribe('my-stream')
+    const catalog = await Catalog.fetch(broadcast)
+
+    // Subscribe to specific track
+    const track = broadcast.getTrack('video/1080p')
+
+    // Setup decoder
+    const decoder = new VideoDecoder({
+      output: (frame) => {
+        // Render frame to canvas or video element
+        ctx.drawImage(frame, 0, 0)
+        frame.close()
+      },
+      error: (e) => console.error('Decode error:', e)
+    })
+
+    // Get codec info from catalog
+    const trackInfo = catalog.tracks().find(t => t.name === 'video/1080p')
+    decoder.configure({
+      codec: trackInfo.codec,
+      codedWidth: trackInfo.width,
+      codedHeight: trackInfo.height
+    })
+
+    // Decode frames
+    for await (const group of track.groups()) {
+      for await (const frame of group.frames()) {
+        const chunk = new EncodedVideoChunk({
+          type: frame.isKeyframe ? 'key' : 'delta',
+          timestamp: frame.timestamp,
+          data: frame.data
+        })
+        decoder.decode(chunk)
+      }
+    }
+    ```
+
+  </Tab>
+  <Tab title="Rust">
+    ### Basic Example
+
+    ```rust
+    use moq_lite::Session;
+    use moq_native::Client;
+    use hang::{CatalogConsumer, container::Frame};
+
+    #[tokio::main]
+    async fn main() -> anyhow::Result<()> {
+        // Connect to relay
+        let client = Client::connect("https://relay.example.com/demo").await?;
+        let session = Session::connect(client).await?;
+
+        // Subscribe to broadcast
+        let broadcast = session.subscribe("my-stream").await?;
+
+        // Read catalog
+        let catalog = CatalogConsumer::new(&broadcast).await?;
+        println!("Available tracks:");
+        for track in catalog.tracks() {
+            println!("  {}: {} {}x{}", 
+                track.name, track.codec, 
+                track.width.unwrap_or(0), 
+                track.height.unwrap_or(0)
+            );
+        }
+
+        // Subscribe to video track
+        let track = catalog.subscribe("video/1080p").await?;
+
+        // Receive frames
+        while let Some(frame) = track.next_frame().await? {
+            let timestamp = frame.timestamp();
+            let data = frame.payload();
+            
+            // Send to decoder (gstreamer, ffmpeg, etc.)
+            decoder.decode(data, timestamp)?;
+        }
+
+        Ok(())
+    }
+    ```
+
+    ### With GStreamer
+
+    Using the [hang-gst](https://github.com/moq-dev/gstreamer) plugin:
+
+    ```bash
+    gst-launch-1.0 \
+      hangsrc url=https://relay.example.com/demo name=my-stream ! \
+      decodebin ! \
+      autovideosink
+    ```
+
+  </Tab>
+</Tabs>
+
+## Adaptive Streaming
+
+### Automatic Quality Selection
+
+```typescript
+import { AdaptiveSelector } from '@moq/watch'
+
+const selector = new AdaptiveSelector(watch)
+
+// Enable adaptive streaming
+selector.enable({
+  // Target buffer size (ms)
+  targetBuffer: 2000,
+  
+  // Bandwidth estimation window (ms)
+  bandwidthWindow: 10000,
+  
+  // Switch up threshold (% of bandwidth)
+  switchUpThreshold: 0.8,
+  
+  // Switch down threshold (% of bandwidth)
+  switchDownThreshold: 1.2
+})
+
+// Monitor quality changes
+selector.addEventListener('qualitychange', (e) => {
+  console.log('Switched to:', e.detail.track)
+})
+```
+
+### Manual Quality Control
+
+```typescript
+// Get available qualities
+const qualities = catalog.tracks()
+  .filter(t => t.kind === 'video')
+  .map(t => ({
+    name: t.name,
+    label: `${t.height}p`,
+    bitrate: t.bitrate
+  }))
+
+// Let user select
+const select = document.querySelector('#quality-select')
+for (const q of qualities) {
+  const option = document.createElement('option')
+  option.value = q.name
+  option.textContent = q.label
+  select.appendChild(option)
+}
+
+select.addEventListener('change', async () => {
+  await watch.selectTrack(select.value)
+})
+```
+
+## Statistics & Monitoring
+
+### Real-time Statistics
+
+```typescript
+// Get current stats
+const stats = watch.getStats()
+
+console.log({
+  // Playback
+  currentTime: stats.currentTime,
+  buffered: stats.buffered,
+  
+  // Network
+  bitrate: stats.bitrate,
+  bandwidth: stats.bandwidth,
+  
+  // Quality
+  droppedFrames: stats.droppedFrames,
+  decodedFrames: stats.decodedFrames,
+  
+  // Latency
+  latency: stats.latency,
+  jitter: stats.jitter
+})
+
+// Monitor continuously
+setInterval(() => {
+  const stats = watch.getStats()
+  updateUI(stats)
+}, 1000)
+```
+
+### Performance Monitoring
+
+```typescript
+// Track quality changes
+let qualityChanges = 0
+watch.addEventListener('qualitychange', () => {
+  qualityChanges++
+})
+
+// Track buffering events
+let bufferingEvents = 0
+let bufferingTime = 0
+watch.addEventListener('waiting', () => {
+  bufferingEvents++
+  bufferStart = Date.now()
+})
+watch.addEventListener('playing', () => {
+  if (bufferStart) {
+    bufferingTime += Date.now() - bufferStart
+  }
+})
+
+// Report metrics
+setInterval(() => {
+  analytics.track('playback_quality', {
+    quality_changes: qualityChanges,
+    buffering_events: bufferingEvents,
+    buffering_time_ms: bufferingTime,
+    average_bitrate: watch.getStats().bitrate
+  })
+}, 60000)
+```
+
+## Authentication
+
+Watch protected broadcasts with JWT tokens:
+
+```typescript
+// Generate token (server-side or CLI)
+// moq-token --key secret.jwk sign --root demo --subscribe my-stream
+
+const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+
+// Include in URL
+const url = `https://relay.example.com/demo?jwt=${token}`
+const client = await Client.connect(url)
+```
+
+See [Authentication](/guides/authentication) for detailed setup.
+
+## Advanced Topics
+
+### Multi-track Playback
+
+Play video, audio, and subtitles together:
+
+```typescript
+const broadcast = await client.subscribe('my-stream')
+const catalog = await Catalog.fetch(broadcast)
+
+// Create separate watchers for each type
+const videoWatch = new Watch(broadcast, catalog)
+const audioWatch = new Watch(broadcast, catalog)
+
+// Select tracks
+await videoWatch.selectTrack('video/1080p')
+await audioWatch.selectTrack('audio/en')
+
+// Sync to same video element
+const video = document.querySelector('video')
+videoWatch.attachVideo(video)
+audioWatch.attachAudio(video)
+
+// Play both
+await Promise.all([
+  videoWatch.play(),
+  audioWatch.play()
+])
+```
+
+### Time-shift / DVR
+
+If the relay caches content, you can seek backward:
+
+```typescript
+// Check if DVR is available
+const dvr = watch.getDVRWindow()
+if (dvr) {
+  console.log(`Can seek back ${dvr.duration}ms`)
+  
+  // Seek backward
+  await watch.seek(watch.currentTime - 30000) // 30s back
+}
+```
+
+### Thumbnail Preview
+
+Generate thumbnails for seeking:
+
+```typescript
+const canvas = document.createElement('canvas')
+const ctx = canvas.getContext('2d')
+
+const decoder = new VideoDecoder({
+  output: (frame) => {
+    // Draw first frame of each GOP as thumbnail
+    if (frame.isKeyframe) {
+      canvas.width = frame.displayWidth
+      canvas.height = frame.displayHeight
+      ctx.drawImage(frame, 0, 0)
+      
+      const thumbnail = canvas.toDataURL()
+      saveThumbnail(frame.timestamp, thumbnail)
+    }
+    frame.close()
+  },
+  error: console.error
+})
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Video not loading">
+    - Check browser console for errors
+    - Verify WebTransport is supported (Chrome 97+, Edge 97+)
+    - Check relay URL is correct
+    - Verify broadcast name exists
+    - Check network connectivity
+  </Accordion>
+  <Accordion title="Authentication errors">
+    - Verify JWT token is valid
+    - Check token has `subscribe` permission
+    - Ensure token hasn't expired
+    - Check URL includes `?jwt=` parameter
+  </Accordion>
+  <Accordion title="Choppy playback">
+    - Check network bandwidth
+    - Try lower quality rendition
+    - Check CPU usage (decoding overhead)
+    - Enable hardware acceleration
+  </Accordion>
+  <Accordion title="High latency">
+    - Check relay distance (use closer relay)
+    - Verify publisher is using low-latency settings
+    - Disable quality auto-switching temporarily
+    - Check for network congestion
+  </Accordion>
+  <Accordion title="Audio/video sync issues">
+    - Ensure both use same clock reference
+    - Check timestamp alignment in catalog
+    - Verify decoder latency is similar
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Learn how to publish media streams
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Setup JWT authentication
+  </Card>
+  <Card title="hang Protocol" icon="film" href="/concepts/hang">
+    Understand the media layer
+  </Card>
+  <Card title="moq-lite Protocol" icon="bus" href="/concepts/moq-lite">
+    Learn about the transport layer
+  </Card>
+</CardGroup>

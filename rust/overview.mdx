@@ -1,0 +1,91 @@
+---
+title: Rust SDK Overview
+description: Overview of the Rust SDK ecosystem for Media over QUIC
+---
+
+The Rust SDK provides a comprehensive set of libraries and tools for building real-time media applications with Media over QUIC. Built for performance and reliability, the Rust implementation is ideal for server-side components, native applications, and CDN infrastructure.
+
+## Architecture
+
+The Rust SDK follows a layered architecture:
+
+```
+┌─────────────────┐
+│   Application   │   Your business logic
+├─────────────────┤
+│      hang       │   Media-specific encoding/streaming
+│                 │   - codecs, containers, catalog
+├─────────────────┤
+│    moq-lite     │   Generic pub/sub transport
+│                 │   - broadcasts, tracks, groups, frames
+├─────────────────┤
+│  WebTransport   │   Browser-compatible QUIC
+│      QUIC       │   - HTTP/3 handshake, multiplexing
+└─────────────────┘
+```
+
+**Rule**: The CDN must not know anything about your application, media codecs, or available tracks. Everything can be fully E2EE.
+
+## Core Crates
+
+<CardGroup cols={2}>
+  <Card title="moq-lite" icon="layer-group" href="/rust/moq-lite">
+    Core pub/sub transport protocol with built-in concurrency and deduplication.
+  </Card>
+  
+  <Card title="moq-native" icon="plug" href="/rust/moq-native">
+    Helper library for configuring QUIC endpoints in native applications.
+  </Card>
+  
+  <Card title="hang" icon="film" href="/rust/hang">
+    Media-specific encoding/streaming layered on top of moq-lite.
+  </Card>
+  
+  <Card title="moq-mux" icon="shuffle" href="/rust/moq-mux">
+    Media muxers and demuxers for fMP4, CMAF, and HLS formats.
+  </Card>
+</CardGroup>
+
+## Applications
+
+<CardGroup cols={2}>
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Clusterable relay server for fan-out and cross-region distribution.
+  </Card>
+  
+  <Card title="moq-cli" icon="terminal" href="/rust/moq-cli">
+    CLI tool for publishing media to MoQ relays.
+  </Card>
+  
+  <Card title="moq-token" icon="key" href="/rust/moq-token">
+    JWT authentication library and CLI tool.
+  </Card>
+</CardGroup>
+
+## Advanced
+
+<CardGroup cols={2}>
+  <Card title="libmoq" icon="c" href="/rust/libmoq">
+    C bindings for moq-lite, enabling integration with C/C++ applications.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **Real-time latency** using QUIC for prioritization and partial reliability
+- **Massive scale** designed for fan-out and cross-region clustering
+- **Generic pub/sub** for any live data, not just media
+- **Built-in concurrency** with async/await and Tokio
+- **Production-ready** with comprehensive error handling
+
+## Package Repository
+
+All crates are published on [crates.io](https://crates.io/search?q=moq) and documented on [docs.rs](https://docs.rs).
+
+## Source Code
+
+The Rust SDK is open source and available on [GitHub](https://github.com/moq-dev/moq/tree/main/rs).
+
+## Getting Started
+
+Ready to start building? Check out the [Getting Started](/rust/getting-started) guide to install the SDK and run your first example.

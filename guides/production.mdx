@@ -1,0 +1,618 @@
+---
+title: Production Deployment
+description: Best practices for deploying Moq in production environments
+---
+
+# Production Deployment
+
+This guide covers best practices, architecture patterns, and operational considerations for deploying Moq in production.
+
+## Architecture Overview
+
+A production Moq deployment typically consists of:
+
+```
+Publishers → Origin Relays → Regional Relays → Edge Relays → Viewers
+              (Primary)       (Intermediate)    (CDN/Edge)
+```
+
+### Component Roles
+
+- **Origin Relays**: Receive content from publishers, authenticate, validate
+- **Regional Relays**: Aggregate traffic, provide redundancy, span continents
+- **Edge Relays**: Serve viewers, cache content, distributed globally
+- **Root Relay**: Coordinates cluster, tracks broadcasts (can be any relay)
+
+## Deployment Checklist
+
+<Steps>
+  <Step title="TLS Certificates">
+    Use valid TLS certificates from Let's Encrypt or a commercial CA. Self-signed certificates are not suitable for production.
+    
+    ```bash
+    certbot certonly --standalone -d relay.example.com
+    ```
+  </Step>
+  <Step title="Authentication">
+    Enable JWT authentication and disable public access (or limit to specific paths).
+    
+    ```toml
+    [auth]
+    key = "/etc/moq/secret.jwk"
+    # public = ""  # Disable public access
+    ```
+  </Step>
+  <Step title="Monitoring">
+    Set up logging, metrics, and alerting to track relay health and performance.
+  </Step>
+  <Step title="Redundancy">
+    Deploy at least 2 relays per region for high availability.
+  </Step>
+  <Step title="Load Balancing">
+    Use DNS or anycast to distribute traffic across relays.
+  </Step>
+  <Step title="Firewall">
+    Configure firewalls to allow only necessary traffic.
+  </Step>
+  <Step title="Systemd Service">
+    Run relays as system services with automatic restart.
+  </Step>
+  <Step title="Auto-scaling">
+    Configure auto-scaling based on CPU, bandwidth, or connection count.
+  </Step>
+</Steps>
+
+## Multi-Region Deployment
+
+### Three-Tier Architecture
+
+For global deployments:
+
+```
+Layer 1: Origin (1-2 relays)
+   │
+   └─── Receives content from publishers
+   │   Authoritative source
+   │   High-reliability hardware
+   │
+   v
+Layer 2: Regional (3-6 relays)
+   │
+   └─── NA-East, NA-West, EU-West, EU-East, APAC, SA
+   │   Aggregate traffic from origins
+   │   Provide redundancy
+   │
+   v
+Layer 3: Edge (10-100+ relays)
+   │
+   └─── Major cities worldwide
+       Serve viewers
+       Cache content
+       Lowest latency to users
+```
+
+### Configuration Example
+
+**Origin Relay (us-east-1):**
+
+```toml origin.toml
+[log]
+level = "info"
+
+[server]
+listen = "[::]:443"
+
+[server.tls]
+cert = "/etc/letsencrypt/live/origin.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/origin.example.com/privkey.pem"
+
+[auth]
+key = "/etc/moq/secret.jwk"
+# No public access on origin
+
+# This is the root relay for the cluster
+```
+
+**Regional Relay (eu-west-1):**
+
+```toml regional.toml
+[log]
+level = "info"
+
+[server]
+listen = "[::]:443"
+
+[server.tls]
+cert = "/etc/letsencrypt/live/eu.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/eu.example.com/privkey.pem"
+
+[auth]
+key = "/etc/moq/public.jwk"  # Public key from origin
+
+[cluster]
+root = "https://origin.example.com?jwt=CLUSTER_TOKEN"
+node = "https://eu.example.com"
+```
+
+**Edge Relay (london):**
+
+```toml edge.toml
+[log]
+level = "warn"  # Less verbose on edge
+
+[server]
+listen = "[::]:443"
+
+[server.tls]
+cert = "/etc/letsencrypt/live/london.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/london.example.com/privkey.pem"
+
+[web.https]
+listen = "[::]:443"
+cert = "/etc/letsencrypt/live/london.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/london.example.com/privkey.pem"
+
+[auth]
+key = "/etc/moq/public.jwk"
+public = "demo"  # Allow anonymous viewing on edge
+
+[cluster]
+root = "https://origin.example.com?jwt=CLUSTER_TOKEN"
+node = "https://london.example.com"
+```
+
+## High Availability
+
+### Load Balancing
+
+#### DNS Round-Robin
+
+Simplest approach:
+
+```dns
+relay.example.com.  A      1.2.3.4
+relay.example.com.  A      5.6.7.8
+relay.example.com.  AAAA   2001:db8::1
+relay.example.com.  AAAA   2001:db8::2
+```
+
+**Pros:**
+- Simple to implement
+- No additional infrastructure
+
+**Cons:**
+- No health checking
+- Clients may cache DNS
+- Not latency-aware
+
+#### GeoDNS
+
+Route users to nearest relay:
+
+```dns
+# Users in North America get:
+relay.example.com.  A      us-east.example.com
+
+# Users in Europe get:
+relay.example.com.  A      eu-west.example.com
+
+# Users in Asia get:
+relay.example.com.  A      ap-south.example.com
+```
+
+Providers: Route53, Cloudflare, NS1, Azure Traffic Manager
+
+#### Anycast
+
+Multiple relays share the same IP address:
+
+```
+All relays announce: 203.0.113.10
+Internet routing delivers to nearest relay
+```
+
+**Pros:**
+- Automatic failover
+- Lowest latency (network-layer routing)
+- No DNS caching issues
+
+**Cons:**
+- Requires BGP setup
+- More complex infrastructure
+- Typically needs hosting with anycast support
+
+### Health Checking
+
+Monitor relay health:
+
+```bash
+#!/bin/bash
+# health-check.sh
+
+RELAY_URL="http://relay.example.com:4443/"
+
+if curl -sf "$RELAY_URL" > /dev/null; then
+  echo "Relay healthy"
+  exit 0
+else
+  echo "Relay unhealthy"
+  exit 1
+fi
+```
+
+Run from monitoring system (Prometheus, Datadog, etc.)
+
+### Redundant Origins
+
+Deploy origins in active-active or active-passive:
+
+**Active-Passive:**
+```
+Primary Origin (active)
+   │
+   v (failure)
+   │
+Secondary Origin (standby)
+```
+
+Publishers connect to primary, failover to secondary.
+
+**Active-Active:**
+```
+Origin A ←───── Publishers (50%)
+Origin B ←───── Publishers (50%)
+```
+
+Both origins active, load balanced.
+
+## Security
+
+### Network Security
+
+<CardGroup cols={2}>
+  <Card title="Firewall Rules" icon="shield">
+    - Allow only UDP 443 and TCP 443
+    - Restrict management ports to internal IPs
+    - Use security groups/firewall rules
+  </Card>
+  <Card title="DDoS Protection" icon="shield-halved">
+    - Use DDoS protection service (Cloudflare, AWS Shield)
+    - Rate limit connections per IP
+    - Monitor for anomalies
+  </Card>
+  <Card title="Private Networks" icon="network-wired">
+    - Use private networking for relay-to-relay communication
+    - VPN or VPC peering between regions
+    - Keep cluster tokens on private network
+  </Card>
+  <Card title="Intrusion Detection" icon="radar">
+    - Monitor logs for suspicious activity
+    - Alert on authentication failures
+    - Track connection patterns
+  </Card>
+</CardGroup>
+
+### Application Security
+
+#### Authentication
+
+Always enable authentication in production:
+
+```toml
+[auth]
+key = "/etc/moq/secret.jwk"
+# Never use public = "" in production without careful consideration
+```
+
+See [Authentication Guide](/guides/authentication) for setup.
+
+#### Token Security
+
+- **Short-lived tokens**: 1-24 hours maximum
+- **Refresh tokens**: Issue new tokens before expiration
+- **Revocation**: Rotate keys to revoke all tokens
+- **Minimal permissions**: Only grant needed publish/subscribe rights
+
+#### Secrets Management
+
+Never commit keys to version control:
+
+```bash
+# Use secrets management
+# AWS Secrets Manager
+aws secretsmanager get-secret-value --secret-id moq/secret.jwk \
+  --query SecretString --output text > /etc/moq/secret.jwk
+
+# HashiCorp Vault
+vault kv get -field=jwk secret/moq/key > /etc/moq/secret.jwk
+
+# Kubernetes Secret
+kubectl create secret generic moq-key --from-file=secret.jwk
+```
+
+### TLS Best Practices
+
+- **Use Let's Encrypt**: Free, automated, trusted
+- **Auto-renewal**: Set up certbot auto-renewal
+- **Strong ciphers**: Let QUIC handle cipher selection
+- **Certificate monitoring**: Alert before expiration
+
+## Monitoring & Observability
+
+### Metrics to Track
+
+<Tabs>
+  <Tab title="Infrastructure">
+    - CPU usage
+    - Memory usage
+    - Network bandwidth (in/out)
+    - Disk I/O
+    - UDP packet loss
+    - Connection count
+  </Tab>
+  <Tab title="Application">
+    - Active broadcasts
+    - Active publishers
+    - Active subscribers
+    - Bytes transferred
+    - Connection errors
+    - Authentication failures
+    - Cluster connectivity
+  </Tab>
+  <Tab title="Quality">
+    - End-to-end latency
+    - Frame drops
+    - Rebuffering events
+    - Quality switches
+    - Error rates
+  </Tab>
+</Tabs>
+
+### Logging
+
+```toml
+[log]
+level = "info"  # warn for edge, info for regional, debug for origin
+```
+
+Structured logging:
+
+```bash
+# JSON logs for parsing
+RUST_LOG=info moq-relay relay.toml 2>&1 | jq .
+
+# Send to logging service
+moq-relay relay.toml 2>&1 | logger -t moq-relay
+```
+
+### Alerting
+
+Set up alerts for:
+
+- Relay down (health check fails)
+- High CPU usage (over 80%)
+- High memory usage (over 90%)
+- Certificate expiring (less than 7 days)
+- Authentication failure spike
+- Abnormal traffic patterns
+
+## Performance Optimization
+
+### Operating System
+
+```bash
+# Increase file descriptors
+echo "* soft nofile 1048576" >> /etc/security/limits.conf
+echo "* hard nofile 1048576" >> /etc/security/limits.conf
+
+# Optimize network stack
+sysctl -w net.core.rmem_max=134217728
+sysctl -w net.core.wmem_max=134217728
+sysctl -w net.ipv4.udp_mem='4096 873800 16777216'
+
+# Increase UDP buffer
+sysctl -w net.core.netdev_max_backlog=5000
+```
+
+### Hardware Recommendations
+
+#### Origin Relays
+
+- **CPU**: 8-16 cores
+- **RAM**: 16-32 GB
+- **Network**: 10 Gbps
+- **Storage**: Fast SSD for caching
+
+#### Regional Relays
+
+- **CPU**: 16-32 cores
+- **RAM**: 32-64 GB
+- **Network**: 10-40 Gbps
+- **Storage**: NVMe SSD
+
+#### Edge Relays
+
+- **CPU**: 4-8 cores
+- **RAM**: 8-16 GB
+- **Network**: 1-10 Gbps
+- **Storage**: SSD for caching
+
+### Cloud Provider Recommendations
+
+<Tabs>
+  <Tab title="AWS">
+    **Origin**: c7g.2xlarge (8 vCPU, 16 GB RAM)
+    
+    **Regional**: c7g.4xlarge (16 vCPU, 32 GB RAM)
+    
+    **Edge**: c7g.xlarge (4 vCPU, 8 GB RAM)
+    
+    Use Elastic IP or ALB with UDP support.
+  </Tab>
+  <Tab title="Google Cloud">
+    **Origin**: n2-standard-8
+    
+    **Regional**: n2-standard-16
+    
+    **Edge**: n2-standard-4
+    
+    Use Cloud Load Balancing with UDP.
+  </Tab>
+  <Tab title="Azure">
+    **Origin**: F8s v2
+    
+    **Regional**: F16s v2
+    
+    **Edge**: F4s v2
+    
+    Use Azure Load Balancer with UDP.
+  </Tab>
+</Tabs>
+
+## Scaling
+
+### Horizontal Scaling
+
+Add more relays as traffic grows:
+
+```
+Phase 1: Single relay
+  → 1,000 concurrent viewers
+
+Phase 2: Regional cluster
+  → 10,000 concurrent viewers
+
+Phase 3: Multi-region cluster
+  → 100,000+ concurrent viewers
+
+Phase 4: Multi-tier with edge
+  → 1,000,000+ concurrent viewers
+```
+
+### Auto-scaling
+
+With Kubernetes or cloud auto-scaling:
+
+```yaml
+# Kubernetes HPA example
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: moq-relay
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: moq-relay
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+## Backup & Disaster Recovery
+
+### Configuration Backup
+
+```bash
+# Backup relay config and keys
+tar czf moq-backup-$(date +%Y%m%d).tar.gz \
+  /etc/moq/*.toml \
+  /etc/moq/*.jwk
+
+# Store securely
+aws s3 cp moq-backup-*.tar.gz s3://backups/moq/
+```
+
+### Recovery Plan
+
+<Steps>
+  <Step title="Prepare backup relay">
+    Keep standby relay with same config, different IP
+  </Step>
+  <Step title="Document DNS changes">
+    Document how to update DNS records
+  </Step>
+  <Step title="Test failover">
+    Regularly test switching to backup
+  </Step>
+  <Step title="Runbook">
+    Maintain runbook for common failures
+  </Step>
+</Steps>
+
+## Cost Optimization
+
+### Bandwidth Costs
+
+Moq's biggest cost is typically bandwidth:
+
+- **Clustering reduces costs**: Route traffic optimally
+- **Caching**: Edge relays cache content
+- **Deduplication**: One source, many viewers
+- **Quality adaptation**: Lower quality = less bandwidth
+
+### Cloud Cost Tips
+
+- Use spot/preemptible instances for non-critical edge relays
+- Reserved instances for origin/regional relays
+- Multi-cloud to leverage free egress tiers
+- Monitor bandwidth with usage alerts
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Relay frequently restarting">
+    - Check logs: `journalctl -u moq-relay -n 100`
+    - Look for OOM kills: `dmesg | grep -i oom`
+    - Check disk space: `df -h`
+    - Verify config file is valid
+  </Accordion>
+  <Accordion title="High latency">
+    - Check geographic distance to relay
+    - Verify network path: `mtr relay.example.com`
+    - Check relay CPU usage
+    - Verify QUIC is not being blocked
+    - Test with different DNS resolver
+  </Accordion>
+  <Accordion title="Cluster relays disconnecting">
+    - Check network connectivity between relays
+    - Verify cluster token is valid and not expired
+    - Check for firewall rules blocking relay-to-relay traffic
+    - Ensure root relay is accessible from all leaves
+  </Accordion>
+  <Accordion title="Certificate errors">
+    - Verify certificate is not expired: `openssl x509 -in cert.pem -noout -dates`
+    - Check certificate matches hostname
+    - Ensure full chain is provided
+    - Check Let's Encrypt rate limits
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Relay Setup" icon="server" href="/guides/relay-setup">
+    Detailed relay configuration
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Setup JWT authentication
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Connect publishers to production relay
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/development">
+    Advanced monitoring and debugging
+  </Card>
+</CardGroup>

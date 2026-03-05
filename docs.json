@@ -1,122 +1,153 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Moq",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
-  },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "tabs": [
-      {
-        "tab": "Guides",
-        "groups": [
-          {
-            "group": "Getting started",
-            "pages": [
-              "index",
-              "quickstart",
-              "development"
-            ]
-          },
-          {
-            "group": "Customization",
-            "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "API reference",
-        "groups": [
-          {
-            "group": "API documentation",
-            "pages": [
-              "api-reference/introduction"
-            ]
-          },
-          {
-            "group": "Endpoint examples",
-            "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
-            ]
-          }
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
+    "primary": "#04bc2c",
+    "light": "#fcfcfc",
+    "dark": "#0e172d"
   },
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/moq-dev/moq"
     }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/moq-dev/moq",
+      "discord": "https://discord.gg/FCYF3p99mr"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/moq-lite",
+              "concepts/hang",
+              "concepts/use-cases"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/publishing",
+              "guides/watching",
+              "guides/authentication",
+              "guides/relay-setup",
+              "guides/production"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Rust SDK",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "rust/overview",
+              "rust/getting-started"
+            ]
+          },
+          {
+            "group": "Core Crates",
+            "pages": [
+              "rust/moq-lite",
+              "rust/moq-native",
+              "rust/hang"
+            ]
+          },
+          {
+            "group": "Applications",
+            "pages": [
+              "rust/moq-relay",
+              "rust/moq-cli",
+              "rust/moq-token"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "rust/moq-mux",
+              "rust/libmoq"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "TypeScript SDK",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "typescript/overview",
+              "typescript/getting-started"
+            ]
+          },
+          {
+            "group": "Core Packages",
+            "pages": [
+              "typescript/moq-lite",
+              "typescript/hang",
+              "typescript/signals"
+            ]
+          },
+          {
+            "group": "Web Components",
+            "pages": [
+              "typescript/watch",
+              "typescript/publish",
+              "typescript/ui-core"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "typescript/token",
+              "typescript/clock"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "Media Tools",
+            "pages": [
+              "integrations/ffmpeg",
+              "integrations/obs",
+              "integrations/gstreamer"
+            ]
+          },
+          {
+            "group": "Web",
+            "pages": [
+              "integrations/web-component",
+              "integrations/react",
+              "integrations/vue"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

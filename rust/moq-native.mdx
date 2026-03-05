@@ -1,0 +1,342 @@
+---
+title: moq-native
+description: Helper library for native MoQ applications
+---
+
+`moq-native` is a helper library that simplifies building native MoQ applications by providing opinionated configuration for QUIC endpoints and WebTransport connections.
+
+## Overview
+
+Establishing a QUIC connection and MoQ session can be complex. moq-native handles the details, supporting multiple transport options:
+
+- WebTransport over HTTP/3
+- Raw QUIC with ALPN negotiation
+- WebSocket fallback for restrictive networks
+- Iroh P2P connections (optional)
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+moq-native = "0.13"
+```
+
+### Features
+
+moq-native supports multiple QUIC backends and transport options:
+
+<ParamField path="quinn" type="feature" default="enabled">
+  Use [Quinn](https://github.com/quinn-rs/quinn) as the QUIC implementation
+</ParamField>
+
+<ParamField path="quiche" type="feature">
+  Use [Quiche](https://github.com/cloudflare/quiche) as the QUIC implementation
+</ParamField>
+
+<ParamField path="iroh" type="feature">
+  Enable [Iroh](https://github.com/n0-computer/iroh) P2P support
+</ParamField>
+
+<ParamField path="websocket" type="feature" default="enabled">
+  Enable WebSocket fallback via [web-transport-ws](https://crates.io/crates/web-transport-ws)
+</ParamField>
+
+<ParamField path="aws-lc-rs" type="feature" default="enabled">
+  Use AWS-LC-RS for cryptography (recommended)
+</ParamField>
+
+<ParamField path="ring" type="feature">
+  Use Ring for cryptography
+</ParamField>
+
+## Client Configuration
+
+Connect to a MoQ relay as a client:
+
+```rust
+use moq_native::ClientConfig;
+use url::Url;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create a client with default settings
+    let client = ClientConfig::default().init()?;
+    
+    // Connect to a relay
+    let url = Url::parse("https://cdn.moq.dev/anon/my-app")?;
+    let session = client.connect(url).await?;
+    
+    // Use the session
+    session.closed().await?;
+    
+    Ok(())
+}
+```
+
+### With Publishing
+
+Publish broadcasts through the session:
+
+```rust
+use moq_lite::Origin;
+use moq_native::ClientConfig;
+
+let origin = Origin::produce();
+let client = ClientConfig::default().init()?;
+
+// Configure client to publish from origin
+let session = client
+    .with_publish(origin.consume())
+    .connect(url)
+    .await?;
+```
+
+### With Subscribing
+
+Subscribe to broadcasts through the session:
+
+```rust
+use moq_lite::Origin;
+use moq_native::ClientConfig;
+
+let origin = Origin::produce();
+let client = ClientConfig::default().init()?;
+
+// Configure client to subscribe to origin
+let session = client
+    .with_subscribe(origin)
+    .connect(url)
+    .await?;
+```
+
+### Advanced Configuration
+
+```rust
+use moq_native::{ClientConfig, QuicBackend};
+
+let client = ClientConfig {
+    // Choose QUIC backend
+    backend: QuicBackend::Quinn,
+    
+    // Custom configuration
+    ..Default::default()
+}.init()?;
+```
+
+## Server Configuration
+
+Accept incoming MoQ connections:
+
+```rust
+use moq_native::ServerConfig;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create a server with default settings
+    let server = ServerConfig::default().init()?;
+    
+    // Accept connections
+    while let Some(session) = server.accept().await {
+        tokio::spawn(async move {
+            if let Err(e) = handle_session(session).await {
+                eprintln!("Session error: {}", e);
+            }
+        });
+    }
+    
+    Ok(())
+}
+
+async fn handle_session(session: moq_lite::Session) -> anyhow::Result<()> {
+    session.closed().await?;
+    Ok(())
+}
+```
+
+### TLS Configuration
+
+```rust
+use moq_native::ServerConfig;
+
+let server = ServerConfig {
+    // Listen address
+    listen: "[::]:4443".parse()?,
+    
+    // TLS certificate and key
+    tls_cert: "path/to/cert.pem".into(),
+    tls_key: "path/to/key.pem".into(),
+    
+    ..Default::default()
+}.init()?;
+```
+
+### Self-Signed Certificates
+
+For local development, generate a self-signed certificate:
+
+```rust
+use moq_native::ServerConfig;
+
+let server = ServerConfig {
+    listen: "[::]:4443".parse()?,
+    
+    // Generate cert for localhost
+    tls_generate: vec!["localhost".to_string()],
+    
+    ..Default::default()
+}.init()?;
+```
+
+## Logging
+
+moq-native provides a convenient logging setup:
+
+```rust
+use moq_native::Log;
+use tracing::Level;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Initialize logging
+    Log::new(Level::DEBUG).init();
+    
+    // Your application code
+    tracing::info!("Starting application");
+    
+    Ok(())
+}
+```
+
+Or use the `RUST_LOG` environment variable:
+
+```bash
+RUST_LOG=debug cargo run
+```
+
+## QUIC Backends
+
+Choose between different QUIC implementations:
+
+```rust
+use moq_native::QuicBackend;
+
+// Quinn (default, recommended)
+let backend = QuicBackend::Quinn;
+
+// Quiche (requires "quiche" feature)
+let backend = QuicBackend::Quiche;
+```
+
+### Quinn
+
+[Quinn](https://github.com/quinn-rs/quinn) is the default and recommended QUIC implementation:
+
+- Pure Rust
+- Excellent performance
+- Active development
+- Best WebTransport support
+
+### Quiche
+
+[Quiche](https://github.com/cloudflare/quiche) is Cloudflare's QUIC implementation:
+
+- Battle-tested at scale
+- C library with Rust bindings
+- Used in production by Cloudflare
+
+Enable with the `quiche` feature:
+
+```toml
+[dependencies]
+moq-native = { version = "0.13", features = ["quiche"] }
+```
+
+## Iroh P2P Support
+
+[Iroh](https://github.com/n0-computer/iroh) enables peer-to-peer connections:
+
+```toml
+[dependencies]
+moq-native = { version = "0.13", features = ["iroh"] }
+```
+
+Connect using Iroh URLs:
+
+```rust
+let url = "iroh://<ENDPOINT_ID>";
+let session = client.connect(url.parse()?).await?;
+```
+
+URL formats:
+- `iroh://<ID>` - moq-lite over raw QUIC
+- `moql+iroh://<ID>` - moq-lite over raw QUIC
+- `moqt+iroh://<ID>` - IETF MoQ over raw QUIC
+- `h3+iroh://<ID>/path` - WebTransport over HTTP/3
+
+## WebSocket Fallback
+
+For networks that block QUIC, use WebSocket fallback:
+
+```rust
+let url = "wss://cdn.moq.dev/anon/my-app";
+let session = client.connect(url.parse()?).await?;
+```
+
+WebSocket transport is enabled by default. Disable with:
+
+```toml
+[dependencies]
+moq-native = { version = "0.13", default-features = false, features = ["quinn"] }
+```
+
+## Re-exports
+
+moq-native re-exports commonly used crates:
+
+```rust
+// Re-exported from moq-native
+use moq_native::{
+    moq_lite,     // The moq-lite crate
+    rustls,       // TLS library
+};
+
+// With quinn feature
+use moq_native::web_transport_quinn;
+
+// With quiche feature
+use moq_native::web_transport_quiche;
+```
+
+## Examples
+
+Check out the examples in the repository:
+
+- [Chat example](https://github.com/moq-dev/moq/blob/main/rs/moq-native/examples/chat.rs) - Publishing a chat track
+
+## Resources
+
+- [Full API Documentation](https://docs.rs/moq-native) - Complete reference on docs.rs
+- [Crates.io](https://crates.io/crates/moq-native) - Package page
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/moq-native) - GitHub repository
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-lite" icon="layer-group" href="/rust/moq-lite">
+    Learn about the core transport API
+  </Card>
+  
+  <Card title="Getting Started" icon="rocket" href="/rust/getting-started">
+    Build your first application
+  </Card>
+  
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Deploy a relay server
+  </Card>
+  
+  <Card title="hang" icon="film" href="/rust/hang">
+    Work with media codecs
+  </Card>
+</CardGroup>

@@ -1,0 +1,261 @@
+---
+title: hang
+description: WebCodecs compatible media encoding for MoQ
+---
+
+`hang` is a media-specific library built on top of `moq-lite` for streaming audio and video with WebCodecs compatibility.
+
+## Overview
+
+While `moq-lite` provides generic pub/sub transport, `hang` adds media-specific functionality:
+
+- **Catalog**: JSON track containing codec info and track metadata
+- **Container**: Timestamp + codec bitstream or fragmented MP4
+- **WebCodecs**: Compatible with browser WebCodecs API
+
+Think of `hang` as similar to HLS/DASH, while `moq-lite` is like HTTP.
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+hang = "0.15"
+```
+
+## Architecture
+
+```
+┌─────────────────┐
+│   Application   │   Your business logic
+├─────────────────┤
+│      hang       │   Media encoding (this crate)
+│                 │   - catalog, container
+├─────────────────┤
+│    moq-lite     │   Generic pub/sub
+└─────────────────┘
+```
+
+## Catalog
+
+The catalog is a special JSON track that describes available media tracks and their codecs.
+
+### Catalog Structure
+
+Each `hang` broadcast includes a catalog track that contains:
+
+- Track names and types (audio/video)
+- Codec information
+- Rendition details
+- Live updates as tracks change
+
+### Producing a Catalog
+
+```rust
+use hang::catalog::Catalog;
+
+// Create a catalog
+let mut catalog = Catalog::new();
+
+// Add a video track
+catalog.add_track(TrackInfo {
+    name: "video".to_string(),
+    kind: TrackKind::Video,
+    codec: "avc1.42E01E".to_string(),
+    width: Some(1920),
+    height: Some(1080),
+    framerate: Some(30.0),
+    bitrate: Some(5_000_000),
+});
+
+// Add an audio track
+catalog.add_track(TrackInfo {
+    name: "audio".to_string(),
+    kind: TrackKind::Audio,
+    codec: "mp4a.40.2".to_string(),
+    sample_rate: Some(48000),
+    channels: Some(2),
+    bitrate: Some(128_000),
+});
+```
+
+### Consuming a Catalog
+
+```rust
+use hang::catalog::CatalogConsumer;
+
+// Subscribe to catalog updates
+let mut catalog_consumer = CatalogConsumer::new(track_consumer);
+
+while let Some(catalog) = catalog_consumer.next().await {
+    // Process catalog updates
+    for track in catalog.tracks {
+        println!("Track: {} ({})", track.name, track.codec);
+    }
+}
+```
+
+See [Catalog on docs.rs](https://docs.rs/hang/latest/hang/catalog/struct.Catalog.html)
+
+## Container
+
+The container format defines how media frames are encoded within each track.
+
+### Container Formats
+
+hang supports two container formats:
+
+#### Legacy Format
+
+A simple format: timestamp followed by codec payload:
+
+```rust
+use hang::container::Frame;
+
+// Write a frame with timestamp
+let frame = Frame {
+    pts: 1000,  // Presentation timestamp in milliseconds
+    data: video_data,
+};
+
+track.write_frame(frame)?;
+```
+
+#### CMAF Format
+
+Fragmented MP4 (moof + mdat pairs):
+
+```rust
+use hang::container::CmafFrame;
+
+// Write a CMAF fragment
+let fragment = CmafFrame {
+    moof: moof_data,  // Movie fragment box
+    mdat: mdat_data,  // Media data box
+};
+
+track.write_frame(fragment)?;
+```
+
+## Complete Example
+
+```rust
+use hang::{Catalog, catalog::TrackInfo, catalog::TrackKind};
+use moq_lite::{Origin, Broadcast, Track};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create MoQ infrastructure
+    let origin = Origin::produce();
+    let mut broadcast = Broadcast::produce();
+    
+    // Create catalog
+    let mut catalog = Catalog::new();
+    catalog.add_track(TrackInfo {
+        name: "video".to_string(),
+        kind: TrackKind::Video,
+        codec: "avc1.42E01E".to_string(),
+        width: Some(1920),
+        height: Some(1080),
+        framerate: Some(30.0),
+        bitrate: Some(5_000_000),
+    });
+    
+    // Create catalog track
+    let mut catalog_track = broadcast.create_track(Track {
+        name: "catalog".to_string(),
+        priority: 0,
+    })?;
+    
+    // Publish catalog
+    let catalog_json = serde_json::to_vec(&catalog)?;
+    catalog_track.write_frame(bytes::Bytes::from(catalog_json))?;
+    
+    // Create video track
+    let mut video_track = broadcast.create_track(Track {
+        name: "video".to_string(),
+        priority: 1,
+    })?;
+    
+    // Publish broadcast
+    origin.publish_broadcast("my-stream", broadcast.consume());
+    
+    Ok(())
+}
+```
+
+## Relationship with moq-mux
+
+For importing existing media formats (fMP4, HLS, etc.) into hang broadcasts, use the [moq-mux](/rust/moq-mux) crate:
+
+```rust
+use moq_mux::Mp4Demuxer;
+
+// Import an MP4 file into a hang broadcast
+let demuxer = Mp4Demuxer::new(input_file).await?;
+let broadcast = demuxer.into_broadcast().await?;
+```
+
+## WebCodecs Compatibility
+
+The hang format is designed to work seamlessly with the browser WebCodecs API:
+
+```javascript
+// Browser side (TypeScript/JavaScript)
+import { Catalog } from '@moq/hang';
+
+// Parse catalog from MoQ track
+const catalog = await Catalog.from(track);
+
+// Configure WebCodecs decoder
+const decoder = new VideoDecoder({
+  output: (frame) => renderFrame(frame),
+  error: (e) => console.error(e)
+});
+
+decoder.configure({
+  codec: catalog.tracks[0].codec,
+  codedWidth: catalog.tracks[0].width,
+  codedHeight: catalog.tracks[0].height,
+});
+```
+
+## Error Handling
+
+All operations return `Result<T, hang::Error>`:
+
+```rust
+match catalog.add_track(track_info) {
+    Ok(()) => println!("Track added"),
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+## Resources
+
+- [Full API Documentation](https://docs.rs/hang) - Complete reference on docs.rs
+- [Crates.io](https://crates.io/crates/hang) - Package page
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/hang) - GitHub repository
+- [Specification](https://moq-dev.github.io/drafts/draft-lcurley-moq-hang.html) - hang protocol spec
+- [moq-mux](/rust/moq-mux) - Import existing media formats
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-mux" icon="shuffle" href="/rust/moq-mux">
+    Import media from fMP4, HLS, and more
+  </Card>
+  
+  <Card title="moq-cli" icon="terminal" href="/rust/moq-cli">
+    Publish media from command line
+  </Card>
+  
+  <Card title="moq-lite" icon="layer-group" href="/rust/moq-lite">
+    Learn about the transport layer
+  </Card>
+  
+  <Card title="TypeScript SDK" icon="js" href="/typescript/hang">
+    Browser-side media handling
+  </Card>
+</CardGroup>

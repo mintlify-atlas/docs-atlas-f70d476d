@@ -1,0 +1,240 @@
+---
+title: FFmpeg Integration
+description: Publishing media to Moq using FFmpeg and moq-cli
+---
+
+# FFmpeg Integration
+
+`moq-cli` is a command-line tool that enables you to publish media to Moq relays using FFmpeg for encoding. This powerful combination allows you to stream from files, webcams, screens, and more.
+
+## Installation
+
+<Steps>
+
+### Install moq-cli
+
+Choose your preferred installation method:
+
+<CodeGroup>
+
+```bash Cargo
+cargo install moq-cli
+```
+
+```bash Nix
+nix build github:moq-dev/moq#moq-cli
+```
+
+```bash From Source
+git clone https://github.com/moq-dev/moq
+cd moq
+cargo build --release --bin moq-cli
+# Binary will be in target/release/moq-cli
+```
+
+</CodeGroup>
+
+### Verify FFmpeg
+
+Ensure FFmpeg is installed on your system:
+
+```bash
+ffmpeg -version
+```
+
+</Steps>
+
+## Basic Usage
+
+### Publish a Video File
+
+The simplest way to publish a video file:
+
+```bash
+moq-cli publish video.mp4 https://relay.example.com/anon/my-stream
+```
+
+### Publish from FFmpeg Pipe
+
+Pipe FFmpeg output directly to moq-cli:
+
+```bash
+ffmpeg -i input.mp4 -f mpegts - | moq-cli publish - https://relay.example.com/anon/my-stream
+```
+
+## Common Use Cases
+
+### Webcam Streaming
+
+Stream from your webcam:
+
+<CodeGroup>
+
+```bash macOS
+ffmpeg -f avfoundation -i "0:0" -f mpegts - | \
+  moq-cli publish - https://relay.example.com/anon/webcam
+```
+
+```bash Linux
+ffmpeg -f v4l2 -i /dev/video0 -f mpegts - | \
+  moq-cli publish - https://relay.example.com/anon/webcam
+```
+
+</CodeGroup>
+
+### Screen Capture
+
+Capture and stream your screen:
+
+<CodeGroup>
+
+```bash macOS
+ffmpeg -f avfoundation -i "1:" -f mpegts - | \
+  moq-cli publish - https://relay.example.com/anon/screen
+```
+
+```bash Linux (X11)
+ffmpeg -f x11grab -i :0.0 -f mpegts - | \
+  moq-cli publish - https://relay.example.com/anon/screen
+```
+
+</CodeGroup>
+
+## Encoding Options
+
+### Low Latency Settings
+
+Optimize for minimal latency:
+
+```bash
+ffmpeg -i input.mp4 \
+    -c:v libx264 -preset ultrafast -tune zerolatency \
+    -g 30 -keyint_min 30 \
+    -c:a aac \
+    -f mpegts - | moq-cli publish - https://relay.example.com/anon/stream
+```
+
+<Note>
+The `-g` and `-keyint_min` flags control keyframe interval. Lower values reduce latency but increase bandwidth.
+</Note>
+
+### Custom Video Quality
+
+Configure bitrate and quality settings:
+
+```bash
+ffmpeg -i input.mp4 \
+    -c:v libx264 -preset ultrafast -tune zerolatency \
+    -b:v 2500k -maxrate 2500k -bufsize 5000k \
+    -c:a aac -b:a 128k \
+    -f mpegts - | moq-cli publish - https://relay.example.com/anon/stream
+```
+
+### H.265/HEVC Encoding
+
+Use H.265 for better compression:
+
+```bash
+ffmpeg -i input.mp4 \
+    -c:v libx265 -preset ultrafast \
+    -c:a aac \
+    -f mpegts - | moq-cli publish - https://relay.example.com/anon/stream
+```
+
+## Format Support
+
+Moq supports multiple media formats:
+
+- **fMP4**: Fragmented MP4 (CMAF)
+- **HLS**: HTTP Live Streaming playlists
+- **MPEG-TS**: MPEG Transport Stream
+- **Annex B**: Raw H.264 bitstreams
+
+### Publishing fMP4
+
+```bash
+ffmpeg -i input.mp4 \
+    -c copy \
+    -f mp4 -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+    - | moq-cli publish --url https://relay.example.com/anon --name stream fmp4
+```
+
+## Authentication
+
+Pass JWT tokens for authenticated relays:
+
+```bash
+moq-cli publish video.mp4 "https://relay.example.com/room/123?jwt=<token>"
+```
+
+<Note>
+See the [Authentication guide](/core/authentication) for information on generating JWT tokens.
+</Note>
+
+## Debugging
+
+### Enable Verbose Logging
+
+```bash
+RUST_LOG=debug moq-cli publish video.mp4 https://relay.example.com/anon/stream
+```
+
+### Check Relay Connection
+
+Verify your relay is accessible:
+
+```bash
+curl http://relay.example.com:4443/announced/
+```
+
+## Common Issues
+
+<Warning>
+**Connection Refused**
+- Ensure the relay is running
+- Check firewall allows UDP traffic
+- Verify the URL is correct
+</Warning>
+
+<Warning>
+**Invalid Certificate**
+- The relay needs a valid TLS certificate
+- For development, you can use insecure HTTP mode
+- For production, use certificates from LetsEncrypt
+</Warning>
+
+<Warning>
+**Permission Denied**
+- Check your JWT token is valid
+- Verify the token allows publishing to that path
+- Ensure the token hasn't expired
+</Warning>
+
+## Test Videos
+
+The Moq repository includes helper commands for testing:
+
+```bash
+# Publish Big Buck Bunny
+just pub bbb https://relay.example.com/anon
+
+# Publish Tears of Steel
+just pub tos https://relay.example.com/anon
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy a Relay" icon="server" href="/deployment/relay">
+    Set up your own relay server
+  </Card>
+  <Card title="Web Components" icon="globe" href="/integrations/web-component">
+    Play streams in the browser
+  </Card>
+  <Card title="GStreamer" icon="film" href="/integrations/gstreamer">
+    Use GStreamer for more efficient pipelines
+  </Card>
+  <Card title="OBS Studio" icon="video" href="/integrations/obs">
+    Stream directly from OBS
+  </Card>
+</CardGroup>

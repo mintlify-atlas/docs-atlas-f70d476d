@@ -1,0 +1,345 @@
+---
+title: moq-mux
+description: Media muxers and demuxers for MoQ
+---
+
+`moq-mux` provides media muxers and demuxers for importing and exporting various media formats to/from MoQ broadcasts.
+
+## Overview
+
+moq-mux bridges the gap between existing media formats and MoQ, supporting:
+
+- **fMP4** (Fragmented MP4) - Modern streaming format
+- **CMAF** (Common Media Application Format)
+- **HLS** (HTTP Live Streaming) - Playlist parsing and segment import
+- **Codec parsers** - H.264, H.265/HEVC, AV1, AAC, Opus
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+moq-mux = "0.3"
+```
+
+### Features
+
+Enable specific codec and format support:
+
+<ParamField path="mp4" type="feature" default="enabled">
+  MP4/fMP4 container support
+</ParamField>
+
+<ParamField path="h264" type="feature" default="enabled">
+  H.264/AVC codec parsing
+</ParamField>
+
+<ParamField path="h265" type="feature" default="enabled">
+  H.265/HEVC codec parsing
+</ParamField>
+
+<ParamField path="av1" type="feature" default="enabled">
+  AV1 codec parsing
+</ParamField>
+
+<ParamField path="aac" type="feature" default="enabled">
+  AAC audio codec
+</ParamField>
+
+<ParamField path="opus" type="feature" default="enabled">
+  Opus audio codec
+</ParamField>
+
+<ParamField path="hls" type="feature" default="enabled">
+  HLS playlist parsing and import
+</ParamField>
+
+## MP4 Import
+
+Import fragmented MP4 files into MoQ broadcasts:
+
+```rust
+use moq_mux::Mp4Demuxer;
+use tokio::fs::File;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Open MP4 file
+    let file = File::open("input.mp4").await?;
+    
+    // Create demuxer
+    let mut demuxer = Mp4Demuxer::new(file).await?;
+    
+    // Convert to MoQ broadcast
+    let broadcast = demuxer.into_broadcast().await?;
+    
+    // Publish to origin
+    origin.publish_broadcast("my-stream", broadcast);
+    
+    Ok(())
+}
+```
+
+## HLS Import
+
+Import HLS streams (live or VOD) into MoQ broadcasts:
+
+```rust
+use moq_mux::HlsDemuxer;
+use url::Url;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Parse HLS playlist
+    let url = Url::parse("https://example.com/live/playlist.m3u8")?;
+    let mut demuxer = HlsDemuxer::new(url).await?;
+    
+    // Convert to MoQ broadcast
+    let broadcast = demuxer.into_broadcast().await?;
+    
+    // Publish to origin
+    origin.publish_broadcast("my-stream", broadcast);
+    
+    Ok(())
+}
+```
+
+### HLS Features
+
+- Playlist parsing (master and media playlists)
+- Segment downloading and parsing
+- Multiple renditions (video qualities)
+- Multiple audio tracks
+- Live stream support
+- VOD support
+
+## CMAF Support
+
+CMAF (Common Media Application Format) is fully supported:
+
+```rust
+use moq_mux::CmafDemuxer;
+
+// CMAF is a profile of fMP4
+let demuxer = CmafDemuxer::new(file).await?;
+let broadcast = demuxer.into_broadcast().await?;
+```
+
+## Codec Parsing
+
+Parse codec-specific data:
+
+### H.264
+
+```rust
+use moq_mux::h264::{H264Parser, NalUnit};
+
+let parser = H264Parser::new();
+let nal_units = parser.parse_annexb(&data)?;
+
+for nal in nal_units {
+    match nal.unit_type {
+        NalUnit::SPS => println!("Found SPS"),
+        NalUnit::PPS => println!("Found PPS"),
+        NalUnit::IDR => println!("Found keyframe"),
+        _ => {}
+    }
+}
+```
+
+### H.265
+
+```rust
+use moq_mux::h265::{H265Parser, NalUnit};
+
+let parser = H265Parser::new();
+let nal_units = parser.parse_annexb(&data)?;
+
+for nal in nal_units {
+    match nal.unit_type {
+        NalUnit::VPS => println!("Found VPS"),
+        NalUnit::SPS => println!("Found SPS"),
+        NalUnit::PPS => println!("Found PPS"),
+        NalUnit::IDR => println!("Found keyframe"),
+        _ => {}
+    }
+}
+```
+
+### AV1
+
+```rust
+use moq_mux::av1::Av1Parser;
+
+let parser = Av1Parser::new();
+let obu_units = parser.parse(&data)?;
+```
+
+## Export to MP4
+
+Export MoQ broadcasts back to MP4 format:
+
+```rust
+use moq_mux::Mp4Muxer;
+use tokio::fs::File;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Subscribe to broadcast
+    let broadcast = origin.subscribe_broadcast("my-stream").await?;
+    
+    // Create output file
+    let file = File::create("output.mp4").await?;
+    
+    // Create muxer
+    let mut muxer = Mp4Muxer::new(file).await?;
+    
+    // Write broadcast to file
+    muxer.write_broadcast(broadcast).await?;
+    
+    Ok(())
+}
+```
+
+## Complete Example
+
+Import HLS, publish to MoQ, and export to MP4:
+
+```rust
+use moq_mux::{HlsDemuxer, Mp4Muxer};
+use moq_lite::Origin;
+use tokio::fs::File;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create origin
+    let origin = Origin::produce();
+    
+    // Import from HLS
+    let url = "https://example.com/live/playlist.m3u8".parse()?;
+    let mut hls = HlsDemuxer::new(url).await?;
+    let broadcast = hls.into_broadcast().await?;
+    
+    // Publish to MoQ
+    origin.publish_broadcast("my-stream", broadcast.consume());
+    
+    // Subscribe from MoQ
+    let broadcast = origin.subscribe_broadcast("my-stream").await?;
+    
+    // Export to MP4
+    let file = File::create("output.mp4").await?;
+    let mut mp4 = Mp4Muxer::new(file).await?;
+    mp4.write_broadcast(broadcast).await?;
+    
+    Ok(())
+}
+```
+
+## Track Mapping
+
+moq-mux automatically maps media tracks:
+
+- **Video tracks** → MoQ video tracks
+- **Audio tracks** → MoQ audio tracks
+- **Metadata** → Extracted into catalog
+
+```rust
+// Access track information
+for track in demuxer.tracks() {
+    println!("Track: {}", track.name);
+    println!("Codec: {}", track.codec);
+    println!("Type: {:?}", track.kind);
+}
+```
+
+## Format Detection
+
+Automatic format detection from file extensions:
+
+```rust
+use moq_mux::Demuxer;
+
+// Automatically detects format
+let demuxer = Demuxer::from_path("video.mp4").await?;
+let demuxer = Demuxer::from_path("playlist.m3u8").await?;
+```
+
+## Performance
+
+moq-mux is optimized for:
+
+- **Streaming** - Low-latency processing
+- **Memory efficiency** - Minimal buffering
+- **Async I/O** - Non-blocking operations
+
+## Error Handling
+
+```rust
+use moq_mux::Error;
+
+match demuxer.into_broadcast().await {
+    Ok(broadcast) => println!("Success"),
+    Err(Error::UnsupportedCodec(codec)) => {
+        eprintln!("Codec not supported: {}", codec);
+    }
+    Err(Error::InvalidFormat) => {
+        eprintln!("Invalid media format");
+    }
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+## Supported Containers
+
+| Container | Import | Export | Notes |
+|-----------|--------|--------|-------|
+| fMP4      | ✓      | ✓      | Recommended format |
+| CMAF      | ✓      | ✓      | Profile of fMP4 |
+| HLS       | ✓      | ✗      | Playlist + segments |
+| Regular MP4 | ✗   | ✗      | Use fMP4 instead |
+
+## Supported Codecs
+
+### Video
+
+| Codec | Import | Export | Feature Flag |
+|-------|--------|--------|-------------|
+| H.264/AVC | ✓ | ✓ | `h264` |
+| H.265/HEVC | ✓ | ✓ | `h265` |
+| AV1 | ✓ | ✓ | `av1` |
+| VP9 | ✗ | ✗ | - |
+
+### Audio
+
+| Codec | Import | Export | Feature Flag |
+|-------|--------|--------|-------------|
+| AAC | ✓ | ✓ | `aac` |
+| Opus | ✓ | ✓ | `opus` |
+| MP3 | ✗ | ✗ | - |
+
+## Resources
+
+- [Full API Documentation](https://docs.rs/moq-mux) - Complete reference on docs.rs
+- [Crates.io](https://crates.io/crates/moq-mux) - Package page
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/moq-mux) - GitHub repository
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="hang" icon="film" href="/rust/hang">
+    Media layer built on moq-lite
+  </Card>
+  
+  <Card title="moq-cli" icon="terminal" href="/rust/moq-cli">
+    Publish media from CLI
+  </Card>
+  
+  <Card title="moq-lite" icon="layer-group" href="/rust/moq-lite">
+    Core transport protocol
+  </Card>
+  
+  <Card title="Getting Started" icon="rocket" href="/rust/getting-started">
+    Build your first application
+  </Card>
+</CardGroup>

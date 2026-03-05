@@ -1,0 +1,457 @@
+---
+title: React Integration
+description: Use Moq in React applications
+---
+
+# React Integration
+
+Moq provides seamless integration with React through web components and reactive hooks. Use Moq in your React applications to build real-time streaming experiences.
+
+## Installation
+
+<Steps>
+
+### Install Packages
+
+Install the necessary Moq packages:
+
+```bash
+npm install @moq/watch @moq/publish @moq/signals
+```
+
+### Install React (if needed)
+
+Ensure React is installed:
+
+```bash
+npm install react react-dom
+```
+
+</Steps>
+
+## Using Web Components in React
+
+### Watch Component
+
+Use the `<moq-watch>` web component in React:
+
+```tsx
+import { useEffect, useRef } from 'react';
+import '@moq/watch/element';
+import '@moq/watch/ui';
+
+function VideoPlayer() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  return (
+    <moq-watch-ui>
+      <moq-watch
+        url="https://relay.example.com/anon"
+        path="stream"
+        muted
+        reload>
+        <canvas ref={canvasRef} style={{ width: '100%', height: 'auto' }} />
+      </moq-watch>
+    </moq-watch-ui>
+  );
+}
+
+export default VideoPlayer;
+```
+
+<Note>
+React requires lowercase custom element names. TypeScript may show errors for `moq-watch` - you can add type declarations or use `@ts-ignore`.
+</Note>
+
+### TypeScript Support
+
+Add type declarations for web components:
+
+```tsx
+// types/moq.d.ts
+declare namespace JSX {
+  interface IntrinsicElements {
+    'moq-watch': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+      url: string;
+      path: string;
+      muted?: boolean;
+      paused?: boolean;
+      volume?: number;
+      jitter?: number;
+      reload?: boolean;
+    };
+    'moq-watch-ui': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+    'moq-publish': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+      url: string;
+      path: string;
+      source?: 'camera' | 'screen' | 'file';
+      audio?: boolean;
+      video?: boolean;
+      controls?: boolean;
+    };
+    'moq-publish-ui': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+  }
+}
+```
+
+### Publish Component
+
+Create a publishing component:
+
+```tsx
+import { useRef } from 'react';
+import '@moq/publish/element';
+import '@moq/publish/ui';
+
+function Publisher() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  return (
+    <moq-publish-ui>
+      <moq-publish
+        url="https://relay.example.com/anon"
+        path="my-stream"
+        audio
+        video>
+        <video
+          ref={videoRef}
+          muted
+          autoPlay
+          style={{ width: '100%', height: 'auto' }}
+        />
+      </moq-publish>
+    </moq-publish-ui>
+  );
+}
+
+export default Publisher;
+```
+
+## Reactive State with Signals
+
+Use Moq's signals library with React hooks:
+
+### Using React Adapter
+
+```tsx
+import { Watch } from '@moq/hang';
+import react from '@moq/signals/react';
+
+function VolumeControl({ watch }: { watch: Watch }) {
+  // Convert signal to React state
+  const volume = react(watch.audio.volume);
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    watch.audio.volume.set(parseFloat(e.target.value));
+  };
+
+  return (
+    <div>
+      <label>Volume: {Math.round(volume * 100)}%</label>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={volume}
+        onChange={handleVolumeChange}
+      />
+    </div>
+  );
+}
+```
+
+### Custom Hook for Signals
+
+Create a reusable hook:
+
+```tsx
+import { useState, useEffect } from 'react';
+import type { Signal } from '@moq/signals';
+
+function useSignal<T>(signal: Signal<T>): T {
+  const [value, setValue] = useState(signal.get());
+
+  useEffect(() => {
+    const cleanup = signal.subscribe(setValue);
+    return cleanup;
+  }, [signal]);
+
+  return value;
+}
+
+// Usage
+function BufferStatus({ watch }: { watch: Watch }) {
+  const buffering = useSignal(watch.video.buffering);
+
+  return (
+    <div>
+      {buffering && <span>Buffering...</span>}
+    </div>
+  );
+}
+```
+
+## Controlling Web Components
+
+### Using Refs
+
+Control the player programmatically:
+
+```tsx
+import { useRef } from 'react';
+import '@moq/watch/element';
+
+function PlayerWithControls() {
+  const watchRef = useRef<HTMLElement>(null);
+
+  const togglePlay = () => {
+    const element = watchRef.current;
+    if (!element) return;
+
+    const isPaused = element.hasAttribute('paused');
+    if (isPaused) {
+      element.removeAttribute('paused');
+    } else {
+      element.setAttribute('paused', '');
+    }
+  };
+
+  const toggleMute = () => {
+    const element = watchRef.current;
+    if (!element) return;
+
+    const isMuted = element.hasAttribute('muted');
+    if (isMuted) {
+      element.removeAttribute('muted');
+    } else {
+      element.setAttribute('muted', '');
+    }
+  };
+
+  return (
+    <div>
+      <moq-watch
+        ref={watchRef}
+        url="https://relay.example.com/anon"
+        path="stream">
+        <canvas style={{ width: '100%', height: 'auto' }} />
+      </moq-watch>
+      
+      <button onClick={togglePlay}>Play/Pause</button>
+      <button onClick={toggleMute}>Mute/Unmute</button>
+    </div>
+  );
+}
+```
+
+## Complete Example
+
+A full React application with Moq:
+
+```tsx
+import { useState } from 'react';
+import '@moq/watch/element';
+import '@moq/watch/ui';
+import '@moq/publish/element';
+import '@moq/publish/ui';
+import './App.css';
+
+function App() {
+  const [relayUrl] = useState('https://relay.example.com/anon');
+  const [broadcastName, setBroadcastName] = useState('demo');
+
+  return (
+    <div className="app">
+      <header>
+        <h1>Moq React Demo</h1>
+        <input
+          type="text"
+          value={broadcastName}
+          onChange={(e) => setBroadcastName(e.target.value)}
+          placeholder="Broadcast name"
+        />
+      </header>
+
+      <div className="grid">
+        <section>
+          <h2>Publish</h2>
+          <moq-publish-ui>
+            <moq-publish
+              url={relayUrl}
+              path={broadcastName}
+              audio
+              video>
+              <video muted autoPlay style={{ width: '100%' }} />
+            </moq-publish>
+          </moq-publish-ui>
+        </section>
+
+        <section>
+          <h2>Watch</h2>
+          <moq-watch-ui>
+            <moq-watch
+              url={relayUrl}
+              path={broadcastName}
+              muted
+              reload>
+              <canvas style={{ width: '100%' }} />
+            </moq-watch>
+          </moq-watch-ui>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+export default App;
+```
+
+```css
+/* App.css */
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  margin-bottom: 30px;
+}
+
+header input {
+  margin-left: 20px;
+  padding: 8px 12px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+section h2 {
+  margin-bottom: 15px;
+}
+```
+
+## Using with Next.js
+
+For Next.js applications, import web components dynamically:
+
+```tsx
+import dynamic from 'next/dynamic';
+
+const MoqPlayer = dynamic(
+  () => {
+    import('@moq/watch/element');
+    import('@moq/watch/ui');
+    return Promise.resolve(() => (
+      <moq-watch-ui>
+        <moq-watch url="..." path="...">
+          <canvas style={{ width: '100%' }} />
+        </moq-watch>
+      </moq-watch-ui>
+    ));
+  },
+  { ssr: false }
+);
+
+export default function Page() {
+  return <MoqPlayer />;
+}
+```
+
+<Note>
+Disable SSR for Moq components since they rely on browser APIs like WebTransport.
+</Note>
+
+## Best Practices
+
+### State Management
+
+Use React Context for shared Moq state:
+
+```tsx
+import { createContext, useContext, useState } from 'react';
+
+interface MoqContextType {
+  relayUrl: string;
+  setRelayUrl: (url: string) => void;
+}
+
+const MoqContext = createContext<MoqContextType | null>(null);
+
+export function MoqProvider({ children }: { children: React.ReactNode }) {
+  const [relayUrl, setRelayUrl] = useState('https://relay.example.com/anon');
+
+  return (
+    <MoqContext.Provider value={{ relayUrl, setRelayUrl }}>
+      {children}
+    </MoqContext.Provider>
+  );
+}
+
+export function useMoq() {
+  const context = useContext(MoqContext);
+  if (!context) throw new Error('useMoq must be used within MoqProvider');
+  return context;
+}
+```
+
+### Error Handling
+
+Handle connection errors gracefully:
+
+```tsx
+import { useState, useEffect } from 'react';
+
+function Player({ url, path }: { url: string; path: string }) {
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Listen for connection errors
+    const handleError = (e: Event) => {
+      setError('Failed to connect to stream');
+    };
+
+    window.addEventListener('moq-error', handleError);
+    return () => window.removeEventListener('moq-error', handleError);
+  }, []);
+
+  return (
+    <div>
+      {error && <div className="error">{error}</div>}
+      <moq-watch url={url} path={path}>
+        <canvas style={{ width: '100%' }} />
+      </moq-watch>
+    </div>
+  );
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vue Integration" icon="vuejs" href="/integrations/vue">
+    Use Moq with Vue.js
+  </Card>
+  <Card title="JavaScript API" icon="code" href="/sdk/javascript">
+    Advanced programmatic control
+  </Card>
+  <Card title="Authentication" icon="lock" href="/core/authentication">
+    Secure your streams
+  </Card>
+  <Card title="Web Components" icon="globe" href="/integrations/web-component">
+    Framework-agnostic usage
+  </Card>
+</CardGroup>

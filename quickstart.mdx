@@ -1,80 +1,205 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get up and running with Moq in minutes using the demo application
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will help you get a Moq relay server running with a demo video stream in just a few minutes.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+The demo uses an insecure self-signed certificate intended for **local development only**. For production, you'll need a proper domain and TLS certificate via [LetsEncrypt](https://letsencrypt.org/docs/) or similar.
 </Note>
+
+## Prerequisites
+
+Choose one of the following setup options:
+
+<Tabs>
+  <Tab title="Nix (Recommended)">
+    **Requirements:**
+    - [Nix](https://nixos.org/download.html)
+    - [Nix Flakes enabled](https://nixos.wiki/wiki/Flakes)
+
+    Nix provides a fully reproducible development environment with all dependencies included.
+  </Tab>
+  <Tab title="Manual Setup">
+    **Requirements:**
+    - [Just](https://github.com/casey/just) - Command runner
+    - [Rust](https://www.rust-lang.org/tools/install) - Latest stable version
+    - [Bun](https://bun.sh/) - JavaScript runtime and package manager
+    - [FFmpeg](https://ffmpeg.org/download.html) - Media processing
+
+    You may need additional system dependencies depending on your platform.
+  </Tab>
+</Tabs>
+
+## Running the Demo
+
+<Tabs>
+  <Tab title="Nix">
+    <Steps>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/moq-dev/moq.git
+        cd moq
+        ```
+      </Step>
+      <Step title="Start the development environment">
+        ```bash
+        nix develop -c just dev
+        ```
+        
+        This single command will:
+        - Start a relay server on `localhost:4443`
+        - Publish the Big Buck Bunny demo video
+        - Launch a web server with the demo UI
+
+        <Tip>
+        If you have [nix-direnv](https://github.com/nix-community/nix-direnv) installed, you can simply run:
+        ```bash
+        just dev
+        ```
+        </Tip>
+      </Step>
+      <Step title="Open the demo">
+        Visit [https://localhost:8080](https://localhost:8080) in your browser to see the demo.
+        
+        You'll see the Big Buck Bunny video playing with real-time statistics.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Manual">
+    <Steps>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/moq-dev/moq.git
+        cd moq
+        ```
+      </Step>
+      <Step title="Install dependencies">
+        ```bash
+        just install
+        ```
+        
+        This installs additional Rust tools and JavaScript dependencies.
+      </Step>
+      <Step title="Run the demo">
+        ```bash
+        just dev
+        ```
+        
+        This will:
+        - Start a relay server on `localhost:4443`
+        - Publish the Big Buck Bunny demo video
+        - Launch a web server on `localhost:5173`
+      </Step>
+      <Step title="Open the demo">
+        Visit [http://localhost:5173](http://localhost:5173) in your browser.
+        
+        You'll see the Big Buck Bunny video playing with real-time statistics.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## What's Happening?
+
+The `just dev` command runs three services in parallel:
+
+1. **moq-relay**: A relay server that receives and forwards media streams
+2. **Publisher**: FFmpeg publishes the Big Buck Bunny video to the relay
+3. **Web Server**: Serves the demo UI that subscribes to and plays the stream
+
+## Understanding the Demo
+
+The demo application demonstrates:
+
+- **Real-time streaming**: Sub-second latency from publisher to viewer
+- **Adaptive streaming**: Multiple quality levels (if available)
+- **Statistics overlay**: View bandwidth, latency, and frame metrics
+- **Chat**: See how non-media data can be transmitted alongside video
+
+## Running Components Individually
+
+For development or debugging, you can run each component separately:
+
+<Tabs>
+  <Tab title="Terminal 1: Relay">
+    ```bash
+    just relay
+    ```
+    Starts the relay server on `localhost:4443`.
+  </Tab>
+  <Tab title="Terminal 2: Publisher">
+    ```bash
+    just pub bbb http://localhost:4443/anon
+    ```
+    Publishes the "bbb" (Big Buck Bunny) video to the `/anon` broadcast path.
+  </Tab>
+  <Tab title="Terminal 3: Web Server">
+    ```bash
+    just web http://localhost:4443/anon
+    ```
+    Starts the development web server configured to connect to the relay.
+  </Tab>
+</Tabs>
+
+## Available Test Videos
+
+The demo includes several test videos:
+
+- `bbb` - Big Buck Bunny (default)
+- `tos` - Tears of Steel
+- `av1` - AV1 encoded test video
+- `hevc` - HEVC encoded test video
+
+To use a different video:
+
+```bash
+just pub tos http://localhost:4443/anon
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Port already in use">
+    If port 4443 is already in use, you can modify the port in `dev/relay.toml` or kill the process using that port:
+    
+    ```bash
+    lsof -ti:4443 | xargs kill -9
+    ```
+  </Accordion>
+  <Accordion title="Certificate errors in browser">
+    The demo uses a self-signed certificate. Your browser will warn you about this. You can:
+    - Click "Advanced" and "Proceed" (Chrome/Edge)
+    - Click "Advanced" and "Accept the Risk" (Firefox)
+    - Or visit `http://localhost:4443/certificate.sha256` to see the certificate fingerprint
+  </Accordion>
+  <Accordion title="Video not loading">
+    Make sure all three services are running:
+    1. Check that the relay is running: `curl http://localhost:4443/`
+    2. Verify the publisher is connected by checking relay logs
+    3. Check browser console for WebTransport connection errors
+  </Accordion>
+  <Accordion title="IPv6 issues">
+    If you have IPv6 connectivity issues, try changing the listen address in `dev/relay.toml` from `[::]` to `127.0.0.1`.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Moq libraries for your project
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Learn how Moq is architecturally designed
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Publish your own media streams
+  </Card>
+  <Card title="Watching" icon="eye" href="/guides/watching">
+    Subscribe to and watch Moq streams
+  </Card>
+</CardGroup>

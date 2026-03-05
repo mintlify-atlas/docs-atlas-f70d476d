@@ -1,0 +1,127 @@
+---
+title: "TypeScript SDK Overview"
+description: "Complete TypeScript/JavaScript SDK for Media over QUIC"
+---
+
+The MoQ TypeScript SDK provides a complete set of packages for building real-time live media delivery applications in the browser and Node.js.
+
+## Architecture
+
+The SDK is organized in layers, from low-level protocol implementation to high-level UI components:
+
+```
+Application Layer
+  ├── Web Components (@moq/watch, @moq/publish)
+  └── UI Components (@moq/ui-core)
+
+Media Layer
+  └── @moq/hang (catalog, container, WebCodecs)
+
+Protocol Layer
+  └── @moq/lite (Connection, Broadcast, Track, Group)
+
+Utility Layer
+  ├── @moq/signals (Reactive signals)
+  ├── @moq/token (JWT authentication)
+  └── @moq/clock (Clock synchronization)
+```
+
+## Package Overview
+
+<CardGroup cols={2}>
+  <Card title="@moq/lite" icon="code" href="/typescript/moq-lite">
+    Core pub/sub protocol implementation. Work with connections, broadcasts, tracks, and groups.
+  </Card>
+  
+  <Card title="@moq/hang" icon="film" href="/typescript/hang">
+    Media-specific layer with WebCodecs integration, catalog and container formats.
+  </Card>
+  
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    Watch/subscribe to live streams with Web Component and JavaScript API.
+  </Card>
+  
+  <Card title="@moq/publish" icon="video" href="/typescript/publish">
+    Publish live media from camera or screen with Web Component and JavaScript API.
+  </Card>
+  
+  <Card title="@moq/signals" icon="bolt" href="/typescript/signals">
+    Reactive and safe signals library for state management.
+  </Card>
+  
+  <Card title="@moq/ui-core" icon="palette" href="/typescript/ui-core">
+    Shared UI components (Button, Icon, Stats) and CSS theme system.
+  </Card>
+  
+  <Card title="@moq/token" icon="key" href="/typescript/token">
+    JWT token generation and validation for authentication.
+  </Card>
+  
+  <Card title="@moq/clock" icon="clock" href="/typescript/clock">
+    Clock synchronization example for distributed systems.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **Browser-first**: Built for WebTransport and WebCodecs APIs
+- **Reactive**: Built on signals for efficient state management
+- **Modular**: Use only what you need, from protocol to UI
+- **TypeScript**: Fully typed with excellent IDE support
+- **Standards-based**: Implements IETF MoQ specifications
+
+## Package Details
+
+### Core Packages
+
+**[@moq/lite](https://www.npmjs.com/package/@moq/lite)** - v0.1.5
+- Generic pub/sub protocol on top of WebTransport
+- Core exports: `Connection`, `Broadcast`, `Track`, `Group`, `Path`, `Time`
+- Browser and Node.js support (with polyfill)
+
+**[@moq/hang](https://www.npmjs.com/package/@moq/hang)** - v0.2.0
+- Media encoding/decoding for WebCodecs
+- Exports: `Catalog`, `Container`, utilities
+- Handles audio/video bitstreams and codec configuration
+
+**[@moq/signals](https://www.npmjs.com/package/@moq/signals)** - v0.1.3
+- Reactive signals implementation
+- `Signal` and `Effect` classes for reactive programming
+- React and Solid.js adapters
+
+### Web Components
+
+**[@moq/watch](https://www.npmjs.com/package/@moq/watch)** - v0.2.2
+- `<moq-watch>` web component for watching streams
+- JavaScript API for programmatic control
+- Built with Solid.js
+
+**[@moq/publish](https://www.npmjs.com/package/@moq/publish)** - v0.2.2
+- `<moq-publish>` web component for publishing streams
+- Camera and screen capture support
+- Built with Solid.js
+
+**[@moq/ui-core](https://www.npmjs.com/package/@moq/ui-core)** - v0.1.0
+- Shared UI components: `Button`, `Icon`, `Stats`
+- CSS variables and theme system
+- Reusable across watch and publish packages
+
+### Utilities
+
+**[@moq/token](https://www.npmjs.com/package/@moq/token)** - v0.1.1
+- JWT token generation and validation
+- CLI tool: `moq-token`
+- Used for authenticating with MoQ relays
+
+**[@moq/clock](https://www.npmjs.com/package/@moq/clock)** - v0.1.0
+- Clock synchronization example
+- CLI tool: `moq-clock`
+- Demonstrates pub/sub patterns
+
+## Getting Started
+
+Check out the [Getting Started guide](/typescript/getting-started) to begin using the TypeScript SDK.
+
+## Source Code
+
+All packages are open source and available in the [moq-dev/moq](https://github.com/moq-dev/moq) repository under `/js/`.

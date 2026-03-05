@@ -1,0 +1,529 @@
+---
+title: Vue Integration
+description: Use Moq in Vue.js applications
+---
+
+# Vue Integration
+
+Moq integrates seamlessly with Vue.js through web components and reactive composition. Build real-time streaming experiences in your Vue applications.
+
+## Installation
+
+<Steps>
+
+### Install Packages
+
+Install the necessary Moq packages:
+
+```bash
+npm install @moq/watch @moq/publish @moq/signals
+```
+
+### Install Vue (if needed)
+
+Ensure Vue is installed:
+
+```bash
+npm install vue
+```
+
+</Steps>
+
+## Using Web Components in Vue
+
+### Configure Vue for Custom Elements
+
+Tell Vue to treat Moq elements as custom elements:
+
+```ts
+// main.ts
+import { createApp } from 'vue';
+import App from './App.vue';
+
+const app = createApp(App);
+
+// Configure Vue to ignore custom elements
+app.config.compilerOptions.isCustomElement = (tag) => tag.startsWith('moq-');
+
+app.mount('#app');
+```
+
+For Vite:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+
+export default defineConfig({
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          isCustomElement: (tag) => tag.startsWith('moq-')
+        }
+      }
+    })
+  ]
+});
+```
+
+### Watch Component
+
+Use the `<moq-watch>` web component in Vue:
+
+```vue
+<script setup lang="ts">
+import { ref, onMounted } from 'vue';
+import '@moq/watch/element';
+import '@moq/watch/ui';
+
+const relayUrl = ref('https://relay.example.com/anon');
+const broadcastPath = ref('stream');
+</script>
+
+<template>
+  <moq-watch-ui>
+    <moq-watch
+      :url="relayUrl"
+      :path="broadcastPath"
+      muted
+      reload>
+      <canvas style="width: 100%; height: auto" />
+    </moq-watch>
+  </moq-watch-ui>
+</template>
+```
+
+### Publish Component
+
+Create a publishing component:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import '@moq/publish/element';
+import '@moq/publish/ui';
+
+const relayUrl = ref('https://relay.example.com/anon');
+const broadcastPath = ref('my-stream');
+</script>
+
+<template>
+  <moq-publish-ui>
+    <moq-publish
+      :url="relayUrl"
+      :path="broadcastPath"
+      audio
+      video>
+      <video
+        muted
+        autoplay
+        style="width: 100%; height: auto"
+      />
+    </moq-publish>
+  </moq-publish-ui>
+</template>
+```
+
+## Reactive State with Composition API
+
+### Using Signals with Vue
+
+Create reactive wrappers for Moq signals:
+
+```ts
+// composables/useMoqSignal.ts
+import { ref, onMounted, onUnmounted, type Ref } from 'vue';
+import type { Signal } from '@moq/signals';
+
+export function useMoqSignal<T>(signal: Signal<T>): Ref<T> {
+  const value = ref(signal.get()) as Ref<T>;
+  let cleanup: (() => void) | undefined;
+
+  onMounted(() => {
+    cleanup = signal.subscribe((newValue) => {
+      value.value = newValue;
+    });
+  });
+
+  onUnmounted(() => {
+    cleanup?.();
+  });
+
+  return value;
+}
+```
+
+### Volume Control Component
+
+Use the composable:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useMoqSignal } from '@/composables/useMoqSignal';
+import type { Watch } from '@moq/hang';
+
+const props = defineProps<{
+  watch: Watch;
+}>();
+
+const volume = useMoqSignal(props.watch.audio.volume);
+const volumePercent = computed(() => Math.round(volume.value * 100));
+
+const updateVolume = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  props.watch.audio.volume.set(parseFloat(target.value));
+};
+</script>
+
+<template>
+  <div class="volume-control">
+    <label>Volume: {{ volumePercent }}%</label>
+    <input
+      type="range"
+      min="0"
+      max="1"
+      step="0.01"
+      :value="volume"
+      @input="updateVolume"
+    />
+  </div>
+</template>
+
+<style scoped>
+.volume-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+</style>
+```
+
+## Controlling Web Components
+
+### Using Template Refs
+
+Control the player programmatically:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import '@moq/watch/element';
+
+const watchElement = ref<HTMLElement | null>(null);
+
+const togglePlay = () => {
+  const element = watchElement.value;
+  if (!element) return;
+
+  const isPaused = element.hasAttribute('paused');
+  if (isPaused) {
+    element.removeAttribute('paused');
+  } else {
+    element.setAttribute('paused', '');
+  }
+};
+
+const toggleMute = () => {
+  const element = watchElement.value;
+  if (!element) return;
+
+  const isMuted = element.hasAttribute('muted');
+  if (isMuted) {
+    element.removeAttribute('muted');
+  } else {
+    element.setAttribute('muted', '');
+  }
+};
+</script>
+
+<template>
+  <div>
+    <moq-watch
+      ref="watchElement"
+      url="https://relay.example.com/anon"
+      path="stream">
+      <canvas style="width: 100%; height: auto" />
+    </moq-watch>
+    
+    <div class="controls">
+      <button @click="togglePlay">Play/Pause</button>
+      <button @click="toggleMute">Mute/Unmute</button>
+    </div>
+  </div>
+</template>
+```
+
+## Complete Example
+
+A full Vue application with Moq:
+
+```vue
+<!-- App.vue -->
+<script setup lang="ts">
+import { ref } from 'vue';
+import '@moq/watch/element';
+import '@moq/watch/ui';
+import '@moq/publish/element';
+import '@moq/publish/ui';
+
+const relayUrl = ref('https://relay.example.com/anon');
+const broadcastName = ref('demo');
+</script>
+
+<template>
+  <div class="app">
+    <header>
+      <h1>Moq Vue Demo</h1>
+      <input
+        v-model="broadcastName"
+        type="text"
+        placeholder="Broadcast name"
+      />
+    </header>
+
+    <div class="grid">
+      <section>
+        <h2>Publish</h2>
+        <moq-publish-ui>
+          <moq-publish
+            :url="relayUrl"
+            :path="broadcastName"
+            audio
+            video>
+            <video muted autoplay style="width: 100%" />
+          </moq-publish>
+        </moq-publish-ui>
+      </section>
+
+      <section>
+        <h2>Watch</h2>
+        <moq-watch-ui>
+          <moq-watch
+            :url="relayUrl"
+            :path="broadcastName"
+            muted
+            reload>
+            <canvas style="width: 100%" />
+          </moq-watch>
+        </moq-watch-ui>
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  margin-bottom: 30px;
+}
+
+header input {
+  margin-left: 20px;
+  padding: 8px 12px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+section h2 {
+  margin-bottom: 15px;
+}
+</style>
+```
+
+## Using with Nuxt
+
+For Nuxt applications, configure custom elements:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  vue: {
+    compilerOptions: {
+      isCustomElement: (tag) => tag.startsWith('moq-')
+    }
+  }
+});
+```
+
+Create a client-only component:
+
+```vue
+<!-- components/MoqPlayer.client.vue -->
+<script setup lang="ts">
+import { ref, onMounted } from 'vue';
+
+const loaded = ref(false);
+
+onMounted(async () => {
+  await import('@moq/watch/element');
+  await import('@moq/watch/ui');
+  loaded.value = true;
+});
+
+const props = defineProps<{
+  url: string;
+  path: string;
+}>();
+</script>
+
+<template>
+  <moq-watch-ui v-if="loaded">
+    <moq-watch :url="props.url" :path="props.path" muted reload>
+      <canvas style="width: 100%" />
+    </moq-watch>
+  </moq-watch-ui>
+</template>
+```
+
+Use with `ClientOnly`:
+
+```vue
+<template>
+  <ClientOnly>
+    <MoqPlayer url="https://relay.example.com/anon" path="stream" />
+  </ClientOnly>
+</template>
+```
+
+## Best Practices
+
+### State Management with Pinia
+
+Manage Moq state globally:
+
+```ts
+// stores/moq.ts
+import { defineStore } from 'pinia';
+import { ref } from 'vue';
+
+export const useMoqStore = defineStore('moq', () => {
+  const relayUrl = ref('https://relay.example.com/anon');
+  const isConnected = ref(false);
+
+  function setRelayUrl(url: string) {
+    relayUrl.value = url;
+  }
+
+  function setConnected(connected: boolean) {
+    isConnected.value = connected;
+  }
+
+  return {
+    relayUrl,
+    isConnected,
+    setRelayUrl,
+    setConnected
+  };
+});
+```
+
+### Error Handling
+
+Handle connection errors gracefully:
+
+```vue
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue';
+
+const error = ref<string | null>(null);
+
+const handleError = (e: Event) => {
+  error.value = 'Failed to connect to stream';
+};
+
+onMounted(() => {
+  window.addEventListener('moq-error', handleError);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('moq-error', handleError);
+});
+</script>
+
+<template>
+  <div>
+    <div v-if="error" class="error">
+      {{ error }}
+    </div>
+    <moq-watch url="..." path="...">
+      <canvas style="width: 100%" />
+    </moq-watch>
+  </div>
+</template>
+
+<style scoped>
+.error {
+  padding: 12px;
+  margin-bottom: 16px;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 4px;
+  color: #c00;
+}
+</style>
+```
+
+### TypeScript Support
+
+Add type declarations:
+
+```ts
+// types/moq.d.ts
+declare module '@moq/watch/element' {
+  const content: any;
+  export default content;
+}
+
+declare module '@moq/watch/ui' {
+  const content: any;
+  export default content;
+}
+
+declare module '@moq/publish/element' {
+  const content: any;
+  export default content;
+}
+
+declare module '@moq/publish/ui' {
+  const content: any;
+  export default content;
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Integration" icon="react" href="/integrations/react">
+    Use Moq with React
+  </Card>
+  <Card title="JavaScript API" icon="code" href="/sdk/javascript">
+    Advanced programmatic control
+  </Card>
+  <Card title="Authentication" icon="lock" href="/core/authentication">
+    Secure your streams
+  </Card>
+  <Card title="Web Components" icon="globe" href="/integrations/web-component">
+    Framework-agnostic usage
+  </Card>
+</CardGroup>

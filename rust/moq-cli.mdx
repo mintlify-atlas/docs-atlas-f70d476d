@@ -1,0 +1,351 @@
+---
+title: moq-cli
+description: CLI tool for publishing media to MoQ relays
+---
+
+`moq-cli` is a command-line tool for publishing media to Media over QUIC relays from various sources and formats.
+
+## Overview
+
+moq-cli makes it easy to:
+
+- Publish media files to MoQ relays
+- Stream from cameras and microphones
+- Convert existing media formats (fMP4, HLS) to MoQ
+- Test and debug MoQ broadcasts
+
+## Installation
+
+```bash
+cargo install moq-cli
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/moq-dev/moq
+cd moq/rs/moq-cli
+cargo build --release
+```
+
+The binary is installed as `moq` (not `moq-cli`).
+
+## Quick Start
+
+Publish a video file to a relay:
+
+```bash
+moq publish https://relay.example.com/my-app/stream input.mp4
+```
+
+## Commands
+
+### publish
+
+Publish media to a relay:
+
+```bash
+moq publish [OPTIONS] <URL> <INPUT>
+```
+
+<ParamField path="URL" type="string" required>
+  Relay URL including the broadcast path
+  
+  Examples:
+  - `https://localhost:4443/anon/my-stream`
+  - `https://cdn.moq.dev/anon/test`
+</ParamField>
+
+<ParamField path="INPUT" type="string" required>
+  Input source (file path, URL, or device)
+  
+  Examples:
+  - `video.mp4` - Local file
+  - `http://example.com/video.mp4` - HTTP URL
+  - `https://example.com/playlist.m3u8` - HLS stream
+  - `-` - Stdin
+</ParamField>
+
+#### Options
+
+<ParamField path="--format" type="string">
+  Input format override
+  
+  Supported formats:
+  - `mp4` - MP4/fMP4 file
+  - `hls` - HLS playlist
+  - `auto` (default) - Auto-detect from extension
+</ParamField>
+
+<ParamField path="--jwt" type="string">
+  JWT authentication token
+  
+  Example:
+  ```bash
+  moq publish --jwt <token> <url> <input>
+  ```
+</ParamField>
+
+<ParamField path="--insecure">
+  Skip TLS certificate verification (development only)
+</ParamField>
+
+<ParamField path="--backend" type="string">
+  QUIC backend to use
+  
+  Options:
+  - `quinn` (default)
+  - `quiche`
+  - `iroh`
+</ParamField>
+
+## Examples
+
+### Publish Local MP4 File
+
+```bash
+moq publish https://localhost:4443/anon/video video.mp4
+```
+
+### Publish from HTTP URL
+
+```bash
+moq publish https://localhost:4443/anon/remote \
+  http://example.com/video.mp4
+```
+
+### Publish HLS Stream
+
+```bash
+moq publish https://localhost:4443/anon/live \
+  https://example.com/live/playlist.m3u8
+```
+
+### Publish with Authentication
+
+Generate a token and publish:
+
+```bash
+# Generate token
+TOKEN=$(moq-token --key dev/root.jwk --root my-app)
+
+# Publish with token
+moq publish --jwt $TOKEN \
+  https://relay.example.com/my-app/stream \
+  video.mp4
+```
+
+### Publish to Localhost (Development)
+
+```bash
+# Use --insecure for self-signed certificates
+moq publish --insecure \
+  https://localhost:4443/anon/test \
+  video.mp4
+```
+
+### Publish via Iroh P2P
+
+```bash
+moq publish --backend iroh \
+  iroh://<ENDPOINT_ID>/anon/test \
+  video.mp4
+```
+
+### Publish from Stdin
+
+Pipe media from another process:
+
+```bash
+ffmpeg -i input.mov -f mp4 -movflags frag_keyframe+empty_moov - | \
+  moq publish https://localhost:4443/anon/stream -
+```
+
+## Input Formats
+
+moq-cli supports various input formats through the [moq-mux](/rust/moq-mux) library:
+
+### MP4 / fMP4
+
+Fragmented MP4 files are recommended for streaming:
+
+```bash
+# Create fragmented MP4 with ffmpeg
+ffmpeg -i input.mov \
+  -f mp4 \
+  -movflags frag_keyframe+empty_moov+default_base_moof \
+  output.mp4
+
+# Publish it
+moq publish https://relay.example.com/stream output.mp4
+```
+
+### HLS
+
+Publish from HLS playlists (live or VOD):
+
+```bash
+moq publish https://relay.example.com/stream \
+  https://example.com/live/playlist.m3u8
+```
+
+The CLI will:
+1. Download the playlist
+2. Parse segments
+3. Convert to MoQ format
+4. Publish to relay
+
+### Raw Streams
+
+For custom formats, pipe through stdin:
+
+```bash
+cat video.h264 | moq publish <url> --format h264 -
+```
+
+## Configuration
+
+moq-cli uses the same configuration as [moq-native](/rust/moq-native):
+
+- `RUST_LOG` - Set log level (`debug`, `info`, `warn`, `error`)
+- `MOQ_BACKEND` - Default QUIC backend
+
+```bash
+# Enable debug logging
+RUST_LOG=debug moq publish <url> <input>
+
+# Use specific backend
+MOQ_BACKEND=quinn moq publish <url> <input>
+```
+
+## Features
+
+moq-cli supports different QUIC backends:
+
+```bash
+# Default: Quinn + Iroh + WebSocket
+cargo install moq-cli
+
+# Quinn only
+cargo install moq-cli --no-default-features --features quinn
+
+# With all backends
+cargo install moq-cli --features iroh,quinn,quiche,websocket
+```
+
+## Scripting
+
+Use moq-cli in shell scripts:
+
+```bash
+#!/bin/bash
+
+RELAY="https://relay.example.com"
+TOKEN=$(moq-token --key key.jwk --root my-app)
+
+# Publish multiple files
+for file in videos/*.mp4; do
+  name=$(basename "$file" .mp4)
+  moq publish --jwt "$TOKEN" "$RELAY/my-app/$name" "$file"
+done
+```
+
+## Error Handling
+
+moq-cli returns appropriate exit codes:
+
+- `0` - Success
+- `1` - General error
+- `2` - Connection error
+- `3` - Authentication error
+
+Check errors in scripts:
+
+```bash
+if moq publish <url> <input>; then
+  echo "Published successfully"
+else
+  echo "Failed to publish" >&2
+  exit 1
+fi
+```
+
+## Troubleshooting
+
+### Connection Refused
+
+```
+Error: connection refused
+```
+
+Ensure the relay is running:
+
+```bash
+# Check if relay is listening
+netstat -an | grep 4443
+```
+
+### Certificate Verification Failed
+
+```
+Error: invalid certificate
+```
+
+For development with self-signed certs:
+
+```bash
+moq publish --insecure <url> <input>
+```
+
+For production, ensure valid TLS certificate.
+
+### Authentication Failed
+
+```
+Error: unauthorized
+```
+
+Check your token:
+
+```bash
+# Verify token works
+moq-token --verify --key key.jwk --token <token>
+```
+
+### Format Not Supported
+
+```
+Error: unsupported format
+```
+
+Convert to fragmented MP4:
+
+```bash
+ffmpeg -i input.mov -f mp4 -movflags frag_keyframe output.mp4
+```
+
+## Resources
+
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/moq-cli) - GitHub repository
+- [moq-mux](/rust/moq-mux) - Media muxer/demuxer library
+- [moq-native](/rust/moq-native) - Native client library
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-mux" icon="shuffle" href="/rust/moq-mux">
+    Learn about media format conversion
+  </Card>
+  
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Set up your own relay
+  </Card>
+  
+  <Card title="moq-token" icon="key" href="/rust/moq-token">
+    Generate authentication tokens
+  </Card>
+  
+  <Card title="Authentication" icon="shield" href="/concepts/authentication">
+    Learn about JWT tokens
+  </Card>
+</CardGroup>

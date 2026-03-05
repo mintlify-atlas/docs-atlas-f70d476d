@@ -1,97 +1,91 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Media over QUIC"
+description: "Real-time live media delivery protocol with sub-second latency at massive scale"
 ---
 
-## Setting up
-
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
+<Card title="Live Demo" icon="play" href="https://moq.dev" horizontal>
+  Try the interactive demo to see Moq in action
 </Card>
 
-## Make it yours
+## What is Moq?
 
-Design a docs site that looks great and empowers your users.
+**Media over QUIC** (Moq) is a next-generation live media protocol that provides **real-time latency** at **massive scale**. Built using modern web technologies, Moq delivers WebRTC-like latency without the constraints of WebRTC. The core networking is delegated to a QUIC library but the rest is in application-space, giving you full control over your media pipeline.
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in minutes with our quick start guide
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Core Concepts" icon="book" href="/concepts/architecture">
+    Learn about the layered architecture and protocol design
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Rust SDK" icon="rust" href="/rust/overview">
+    Build native applications with our Rust libraries
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="TypeScript SDK" icon="js" href="/typescript/overview">
+    Create web applications with our TypeScript packages
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Key Features
 
-Everything you need to create world-class documentation.
+<CardGroup cols={3}>
+  <Card title="Real-time Latency" icon="gauge-high">
+    Uses QUIC for prioritization and partial reliability to achieve WebRTC-like latency
+  </Card>
+  <Card title="Massive Scale" icon="chart-line">
+    Designed for fan-out with CDN support and cross-region clustering
+  </Card>
+  <Card title="Modern Web" icon="globe">
+    Built on WebTransport, WebCodecs, and WebAudio APIs
+  </Card>
+  <Card title="Multi-language" icon="code">
+    Libraries for both Rust (native) and TypeScript (web)
+  </Card>
+  <Card title="Generic Protocol" icon="puzzle-piece">
+    Works with any live data, not just media
+  </Card>
+  <Card title="Layered Architecture" icon="layer-group">
+    Separates transport (moq-lite) from media logic (hang)
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Architecture Overview
 
-## Need inspiration?
+Moq is designed as a layered protocol stack where the CDN operates on generic rules without understanding your application, media codecs, or available tracks.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
+```
+┌─────────────────┐
+│   Application   │   Your business logic
+│                 │   - authentication, non-media tracks
+├─────────────────┤
+│      hang       │   Media-specific encoding/streaming
+│                 │   - codecs, containers, catalog
+├─────────────────┤
+│    moq-lite     │   Generic pub/sub transport
+│                 │   - broadcasts, tracks, groups, frames
+├─────────────────┤
+│  WebTransport   │   Browser-compatible QUIC
+│      QUIC       │   - HTTP/3 handshake, multiplexing
+└─────────────────┘
+```
+
+<Card title="Learn More About the Architecture" icon="diagram-project" href="/concepts/architecture">
+  Deep dive into the protocol layers and design philosophy
 </Card>
+
+## Quick Links
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Moq for Rust or TypeScript
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Learn how to publish media to Moq broadcasts
+  </Card>
+  <Card title="Watching" icon="eye" href="/guides/watching">
+    Subscribe to and render Moq broadcasts
+  </Card>
+  <Card title="Relay Setup" icon="server" href="/guides/relay-setup">
+    Deploy your own Moq relay server
+  </Card>
+</CardGroup>

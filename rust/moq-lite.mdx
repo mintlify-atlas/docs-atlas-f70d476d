@@ -1,0 +1,254 @@
+---
+title: moq-lite
+description: Core pub/sub transport protocol for Media over QUIC
+---
+
+`moq-lite` is the core transport layer for Media over QUIC, providing a generic pub/sub protocol built on WebTransport and QUIC.
+
+<Note>
+This crate implements a simplified subset of the IETF MoQ specification, focusing on practical features and deployability. It's highly recommended to use `moq-lite` instead of the full IETF standard until at least draft-30.
+</Note>
+
+## Overview
+
+moq-lite is designed for real-time live media delivery with sub-second latency at massive scale. It provides:
+
+- **Broadcasts**: Discoverable collections of tracks
+- **Tracks**: Named streams of data, split into groups
+- **Groups**: Sequential collections of frames, delivered out-of-order until expired
+- **Frames**: Chunks of data with an upfront size
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+moq-lite = "0.15"
+```
+
+### Features
+
+- `serde`: Enable serialization support for data structures
+
+## Core API
+
+The API is built around Producer/Consumer pairs with a clear hierarchy:
+
+### Origin
+
+A collection of broadcasts, produced by one or more sessions.
+
+```rust
+use moq_lite::Origin;
+
+// Create a producer/consumer pair
+let origin = Origin::produce();
+let origin_producer = origin.clone();
+let origin_consumer = origin.consume();
+
+// Publish a broadcast to the origin
+origin_producer.publish_broadcast("my-broadcast", broadcast.consume());
+```
+
+See [Origin on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Origin.html)
+
+### Broadcast
+
+A collection of tracks, produced by a single publisher.
+
+```rust
+use moq_lite::Broadcast;
+
+// Create a broadcast
+let mut broadcast = Broadcast::produce();
+
+// Create tracks within the broadcast
+let track = broadcast.create_track(Track {
+    name: "video".to_string(),
+    priority: 0,
+})?;
+```
+
+See [Broadcast on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Broadcast.html)
+
+### Track
+
+A collection of groups, delivered out-of-order until expired.
+
+```rust
+use moq_lite::Track;
+
+// Create a track
+let mut track = broadcast.create_track(Track {
+    name: "audio".to_string(),
+    priority: 1,  // Higher priority = delivered first
+})?;
+
+// Append a group to the track
+let mut group = track.append_group()?;
+
+// Or write a single-frame group
+track.write_frame(bytes::Bytes::from("data"))?;
+```
+
+See [Track on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Track.html)
+
+### Group
+
+A collection of frames, delivered in order until cancelled.
+
+```rust
+// Create a group
+let mut group = track.append_group()?;
+
+// Write multiple frames
+group.write_frame(bytes::Bytes::from("frame1"))?;
+group.write_frame(bytes::Bytes::from("frame2"))?;
+
+// Finish the group
+group.finish()?;
+```
+
+See [Group on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Group.html)
+
+### Frame
+
+Chunks of data with an upfront size.
+
+```rust
+use bytes::Bytes;
+
+// Write a frame
+group.write_frame(Bytes::from("data"))?;
+```
+
+See [Frame on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Frame.html)
+
+## Client and Server
+
+moq-lite provides low-level client and server implementations. For most use cases, use `moq-native` which provides higher-level helpers.
+
+### Client
+
+Connect to a relay as a client:
+
+```rust
+use moq_lite::Client;
+
+// Typically used via moq-native::ClientConfig
+let client = moq_native::ClientConfig::default().init()?;
+let session = client.connect(url).await?;
+```
+
+See [Client on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Client.html)
+
+### Server
+
+Accept connections as a server:
+
+```rust
+use moq_lite::Server;
+
+// Typically used via moq-native::ServerConfig
+let server = moq_native::ServerConfig::default().init()?;
+let session = server.accept().await?;
+```
+
+See [Server on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Server.html)
+
+### Session
+
+Represents an active MoQ connection:
+
+```rust
+// Wait until the session is closed
+session.closed().await?;
+```
+
+See [Session on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/struct.Session.html)
+
+## Complete Example
+
+```rust
+use moq_lite::{Origin, Broadcast, Track};
+use bytes::Bytes;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create an origin
+    let origin = Origin::produce();
+    
+    // Create a broadcast
+    let mut broadcast = Broadcast::produce();
+    
+    // Create a track
+    let mut track = broadcast.create_track(Track {
+        name: "data".to_string(),
+        priority: 0,
+    })?;
+    
+    // Publish the broadcast
+    origin.publish_broadcast("my-app", broadcast.consume());
+    
+    // Write data to the track
+    track.write_frame(Bytes::from_static(b"Hello, MoQ!"))?;
+    
+    Ok(())
+}
+```
+
+## Architecture
+
+moq-lite operates at the transport layer, below media-specific logic:
+
+```
+Application     ← Your business logic
+    ↓
+  hang          ← Media codecs (optional)
+    ↓
+moq-lite        ← Generic pub/sub (this crate)
+    ↓
+WebTransport    ← QUIC + HTTP/3
+```
+
+## Error Handling
+
+All operations return `Result<T, moq_lite::Error>`:
+
+```rust
+match track.write_frame(data) {
+    Ok(()) => println!("Frame written"),
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+See [Error on docs.rs](https://docs.rs/moq-lite/latest/moq_lite/enum.Error.html)
+
+## Resources
+
+- [Full API Documentation](https://docs.rs/moq-lite) - Complete reference on docs.rs
+- [Crates.io](https://crates.io/crates/moq-lite) - Package page
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/moq-lite) - GitHub repository
+- [Specification](https://moq-dev.github.io/drafts/draft-lcurley-moq-lite.html) - moq-lite protocol spec
+- [Examples](https://github.com/moq-dev/moq/tree/main/rs/moq-native/examples) - Code examples
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-native" icon="plug" href="/rust/moq-native">
+    Helper library for native applications
+  </Card>
+  
+  <Card title="hang" icon="film" href="/rust/hang">
+    Media-specific layer built on moq-lite
+  </Card>
+  
+  <Card title="Getting Started" icon="rocket" href="/rust/getting-started">
+    Build your first application
+  </Card>
+  
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Deploy a relay server
+  </Card>
+</CardGroup>

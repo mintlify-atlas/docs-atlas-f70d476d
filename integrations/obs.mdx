@@ -1,0 +1,235 @@
+---
+title: OBS Studio Plugin
+description: Stream to and from Moq using OBS Studio
+---
+
+# OBS Studio Plugin
+
+The Moq OBS Studio plugin enables seamless integration with OBS, allowing you to publish directly to Moq relays and subscribe to Moq broadcasts as sources.
+
+<Warning>
+This plugin is currently under development but works well for most use cases. Contributions are welcome!
+</Warning>
+
+## Overview
+
+The OBS plugin provides two main capabilities:
+
+- **Publishing**: Stream directly from OBS to a Moq relay
+- **Subscribing**: Use Moq broadcasts as video sources in your OBS scenes
+
+## Repository
+
+The plugin is maintained in a separate repository:
+
+<Card title="Moq OBS Plugin" icon="github" href="https://github.com/moq-dev/obs">
+  View source code and installation instructions
+</Card>
+
+## Installation
+
+<Steps>
+
+### Download the Plugin
+
+Clone the repository:
+
+```bash
+git clone https://github.com/moq-dev/obs
+cd obs
+```
+
+### Build from Source
+
+Follow the build instructions in the repository README for your platform:
+
+- **Windows**: Visual Studio build
+- **macOS**: Xcode or command-line tools
+- **Linux**: Standard build tools
+
+### Install to OBS
+
+Copy the built plugin to your OBS plugins directory:
+
+<CodeGroup>
+
+```bash macOS
+cp -r build/obs-moq.plugin ~/Library/Application\ Support/obs-studio/plugins/
+```
+
+```bash Linux
+cp -r build/obs-moq.so ~/.config/obs-studio/plugins/
+```
+
+```bash Windows
+copy build\obs-moq.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
+```
+
+</CodeGroup>
+
+### Restart OBS
+
+Relaunch OBS Studio to load the plugin.
+
+</Steps>
+
+## Publishing from OBS
+
+Stream your OBS output directly to a Moq relay:
+
+<Steps>
+
+### Open Stream Settings
+
+Go to **Settings > Stream** in OBS.
+
+### Select Moq Service
+
+In the **Service** dropdown, select **MoQ**.
+
+### Configure Relay URL
+
+Enter your relay URL and broadcast path:
+
+```
+URL: https://relay.example.com/anon
+Stream Key: my-stream
+```
+
+<Note>
+The stream key becomes the broadcast name on the relay.
+</Note>
+
+### Add Authentication (Optional)
+
+If your relay requires authentication, append the JWT token:
+
+```
+URL: https://relay.example.com/room/123?jwt=<token>
+```
+
+### Start Streaming
+
+Click **Start Streaming** in OBS. Your output will be published to the Moq relay in real-time.
+
+</Steps>
+
+## Subscribing to Moq Sources
+
+Use Moq broadcasts as video sources in your OBS scenes:
+
+<Steps>
+
+### Add Moq Source
+
+In your scene, click the **+** button under **Sources** and select **MoQ Source**.
+
+### Configure Source
+
+Enter the connection details:
+
+- **Relay URL**: `https://relay.example.com/anon`
+- **Broadcast Path**: `my-stream`
+- **JWT Token** (if required)
+
+### Position and Transform
+
+Resize and position the Moq source like any other video source in OBS.
+
+</Steps>
+
+## Use Cases
+
+### Remote Production
+
+Combine multiple Moq sources from remote locations into a single OBS production:
+
+1. Remote contributors publish to Moq using webcams or mobile devices
+2. OBS subscribes to each contributor as a separate source
+3. Mix, overlay, and produce the final stream from OBS
+
+### Live Monitor
+
+View your Moq broadcasts directly in OBS:
+
+- Add your published stream as a source to monitor output
+- Useful for checking latency and quality
+- Preview multiple broadcasts simultaneously
+
+### Restreaming
+
+Publish from one Moq relay and subscribe from another:
+
+1. Subscribe to a Moq broadcast as an OBS source
+2. Apply transformations (overlays, filters, etc.)
+3. Publish the modified stream to a different relay or platform
+
+## Configuration Tips
+
+### Encoder Settings
+
+For optimal Moq streaming, use these OBS encoder settings:
+
+- **Rate Control**: CBR (Constant Bitrate)
+- **Keyframe Interval**: 2 seconds
+- **CPU Preset**: Fast or faster
+- **Tune**: Zero Latency
+
+### Audio Settings
+
+Recommended audio configuration:
+
+- **Sample Rate**: 48 kHz
+- **Channels**: Stereo
+- **Bitrate**: 128 kbps or higher
+
+### Video Settings
+
+Balance quality and latency:
+
+- **Resolution**: 1920x1080 or 1280x720
+- **Frame Rate**: 30 or 60 fps
+- **Bitrate**: 2500-5000 kbps for 1080p
+
+<Note>
+Lower keyframe intervals reduce latency but increase bandwidth usage.
+</Note>
+
+## Troubleshooting
+
+### Plugin Not Showing in OBS
+
+- Verify the plugin files are in the correct directory
+- Check OBS logs for loading errors
+- Ensure OBS version compatibility
+
+### Connection Errors
+
+- Verify relay URL is accessible
+- Check firewall and network settings
+- Ensure UDP traffic is allowed
+- Validate JWT token if authentication is required
+
+### Poor Video Quality
+
+- Increase bitrate in OBS encoder settings
+- Check network bandwidth availability
+- Reduce resolution or frame rate
+- Use hardware encoding if available
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy a Relay" icon="server" href="/deployment/relay">
+    Set up your own relay server
+  </Card>
+  <Card title="FFmpeg Integration" icon="terminal" href="/integrations/ffmpeg">
+    Publish media using command-line tools
+  </Card>
+  <Card title="Web Playback" icon="globe" href="/integrations/web-component">
+    Watch OBS streams in the browser
+  </Card>
+  <Card title="Authentication" icon="lock" href="/core/authentication">
+    Secure your streams with JWT tokens
+  </Card>
+</CardGroup>

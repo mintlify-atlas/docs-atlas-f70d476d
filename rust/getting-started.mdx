@@ -1,0 +1,212 @@
+---
+title: Getting Started with Rust SDK
+description: Install the Rust SDK and build your first Media over QUIC application
+---
+
+This guide will help you get started with the Rust SDK for Media over QUIC.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- [Rust](https://www.rust-lang.org/tools/install) 1.70 or higher
+- A basic understanding of async Rust with Tokio
+
+## Installation
+
+Add the required crates to your `Cargo.toml`:
+
+```toml Cargo.toml
+[dependencies]
+moq-lite = "0.15"
+moq-native = "0.13"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+bytes = "1"
+url = "2"
+```
+
+For media-specific applications, also add:
+
+```toml Cargo.toml
+[dependencies]
+hang = "0.15"
+moq-mux = "0.3"
+```
+
+## Your First MoQ Application
+
+Let's create a simple chat application that publishes messages to a MoQ relay.
+
+<Steps>
+
+### Create an Origin
+
+The `Origin` is a collection of broadcasts that you can produce and consume:
+
+```rust
+use moq_lite::Origin;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create an origin that we can publish to
+    let origin = Origin::produce();
+    
+    // Run broadcast and session concurrently
+    tokio::select! {
+        res = run_session(origin.consume()) => res,
+        res = run_broadcast(origin) => res,
+    }
+}
+```
+
+### Create a Session
+
+Connect to a MoQ relay and publish your origin:
+
+```rust
+use moq_native::ClientConfig;
+use url::Url;
+
+async fn run_session(origin: moq_lite::OriginConsumer) -> anyhow::Result<()> {
+    // Configure the QUIC client
+    let client = ClientConfig::default().init()?;
+    
+    // Connect to relay (use localhost for development)
+    let url = Url::parse("https://localhost:4443/anon/my-chat")?;
+    
+    // Establish connection and MoQ handshake
+    let session = client.with_publish(origin).connect(url).await?;
+    
+    // Wait until session is closed
+    session.closed().await.map_err(Into::into)
+}
+```
+
+### Create a Broadcast and Track
+
+Publish messages to a track:
+
+```rust
+use moq_lite::{Broadcast, Track};
+use bytes::Bytes;
+
+async fn run_broadcast(origin: moq_lite::OriginProducer) -> anyhow::Result<()> {
+    // Create a broadcast
+    let mut broadcast = Broadcast::produce();
+    
+    // Create a track for chat messages
+    let mut track = broadcast.create_track(Track {
+        name: "chat".to_string(),
+        priority: 0,
+    })?;
+    
+    // Publish broadcast to origin
+    origin.publish_broadcast("", broadcast.consume());
+    
+    // Create a group and write frames
+    let mut group = track.append_group()?;
+    group.write_frame(Bytes::from_static(b"Hello"))?;
+    group.write_frame(Bytes::from_static(b"World"))?;
+    group.finish()?;
+    
+    // Or use the helper to write a single frame
+    track.write_frame(Bytes::from_static(b"Hello MoQ!"))?;
+    
+    Ok(())
+}
+```
+
+### Run Your Application
+
+Build and run your application:
+
+```bash
+cargo run
+```
+
+</Steps>
+
+## Complete Example
+
+<CodeGroup>
+
+```rust main.rs
+use moq_lite::{Origin, Broadcast, Track};
+use moq_native::ClientConfig;
+use bytes::Bytes;
+use url::Url;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let origin = Origin::produce();
+    
+    tokio::select! {
+        res = run_session(origin.consume()) => res,
+        res = run_broadcast(origin) => res,
+    }
+}
+
+async fn run_session(origin: moq_lite::OriginConsumer) -> anyhow::Result<()> {
+    let client = ClientConfig::default().init()?;
+    let url = Url::parse("https://localhost:4443/anon/my-chat")?;
+    let session = client.with_publish(origin).connect(url).await?;
+    session.closed().await.map_err(Into::into)
+}
+
+async fn run_broadcast(origin: moq_lite::OriginProducer) -> anyhow::Result<()> {
+    let mut broadcast = Broadcast::produce();
+    let mut track = broadcast.create_track(Track {
+        name: "chat".to_string(),
+        priority: 0,
+    })?;
+    
+    origin.publish_broadcast("", broadcast.consume());
+    
+    track.write_frame(Bytes::from_static(b"Hello MoQ!"))?;
+    
+    Ok(())
+}
+```
+
+</CodeGroup>
+
+## Running a Local Relay
+
+For local development, you'll need a relay server:
+
+```bash
+# Install moq-relay
+cargo install moq-relay
+
+# Run with default configuration
+moq-relay dev/relay.toml
+```
+
+The relay will listen on `https://localhost:4443` with authentication disabled for the `/anon` path.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-lite" icon="layer-group" href="/rust/moq-lite">
+    Learn about the core transport API
+  </Card>
+  
+  <Card title="hang" icon="film" href="/rust/hang">
+    Work with media codecs and containers
+  </Card>
+  
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Configure and deploy a relay
+  </Card>
+  
+  <Card title="API Reference" icon="book" href="https://docs.rs/moq-lite">
+    Browse the full API documentation
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Full example source](https://github.com/moq-dev/moq/blob/main/rs/moq-native/examples/chat.rs)
+- [docs.rs/moq-lite](https://docs.rs/moq-lite) - Complete API reference
+- [GitHub repository](https://github.com/moq-dev/moq)

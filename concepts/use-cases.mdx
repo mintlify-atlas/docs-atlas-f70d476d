@@ -1,0 +1,322 @@
+---
+title: Use Cases
+description: Explore real-world applications and scenarios where Moq excels
+---
+
+# Use Cases
+
+Moq's combination of **real-time latency** and **massive scale** makes it ideal for a wide range of live media applications. Here are the most common use cases and how Moq addresses their unique challenges.
+
+## Live Streaming
+
+### Interactive Live Streaming
+
+Stream to thousands or millions of viewers with sub-second latency, enabling real-time interaction.
+
+<Card title="Example: Live Gaming Tournament" icon="gamepad">
+  Stream competitive gaming events where viewers need to see action as it happens, not 10-30 seconds later. Real-time chat and reactions make the experience more engaging.
+</Card>
+
+**Why Moq?**
+- **Sub-second latency**: Viewers experience events almost simultaneously
+- **Massive scale**: CDN-friendly architecture handles millions of viewers
+- **Chat integration**: Non-media tracks carry chat alongside video
+- **Quality adaptation**: Multiple renditions for different network conditions
+
+**Architecture:**
+```
+Streamer → moq-relay (edge) → moq-relay (regional) → Viewers
+             ↓
+          Chat track (real-time messages)
+```
+
+### Live Sports
+
+Deliver live sports with minimal delay, crucial for betting applications and social viewing.
+
+<Card title="Example: Live Betting Platform" icon="futbol">
+  Sports betting requires the lowest possible latency to prevent unfair advantages. Moq enables betting odds to update in sync with the live action.
+</Card>
+
+**Why Moq?**
+- **Fairness**: All viewers see the same moment simultaneously
+- **Global distribution**: Cross-region clustering for worldwide events
+- **Multiple angles**: Each camera as a separate track
+- **Stats overlay**: Telemetry tracks for live statistics
+
+### Content Creator Streaming
+
+Enable streamers to broadcast with professional quality and real-time engagement.
+
+<Card title="Example: Educational Live Coding" icon="code">
+  A developer teaching live coding can interact with viewers' questions in real-time, making the experience truly interactive.
+</Card>
+
+**Why Moq?**
+- **Browser-based**: Stream directly from a web page using WebCodecs
+- **Low overhead**: Efficient encoding and delivery
+- **Audience interaction**: Real-time Q&A via chat tracks
+- **Multi-quality**: Adaptive streaming for viewers on different connections
+
+## Video Conferencing
+
+### Large-Scale Webinars
+
+Host webinars with thousands of passive viewers while maintaining low latency.
+
+<Card title="Example: Company All-Hands" icon="presentation">
+  A company-wide meeting with 10,000 employees where the CEO presents and takes live questions.
+</Card>
+
+**Why Moq?**
+- **Scalable architecture**: Relay-based distribution handles large audiences
+- **Low latency**: Questions and answers flow naturally
+- **Bandwidth efficient**: Smart caching and deduplication
+- **Selective forwarding**: Active speakers use more bandwidth, viewers use less
+
+**Hybrid Architecture:**
+```
+Active participants (WebRTC mesh)
+        ↓
+   moq-relay (bridge)
+        ↓
+   Passive viewers (Moq streaming)
+```
+
+### Multiparty Conferencing
+
+Real-time video calls with selective forwarding for efficiency.
+
+<Card title="Example: Remote Team Meeting" icon="users">
+  A team of 20 people across 5 continents meeting face-to-face with natural conversation flow.
+</Card>
+
+**Why Moq?**
+- **Selective forwarding**: Send only needed streams to each participant
+- **Simulcast**: Multiple quality levels for bandwidth adaptation
+- **Screen sharing**: Separate high-resolution track for presentations
+- **Recording**: Natural fit for recording to moq-relay
+
+## Contribution & Distribution
+
+### Live Event Contribution
+
+Transmit video feeds from the field back to production facilities.
+
+<Card title="Example: News Field Reporting" icon="newspaper">
+  Reporters in the field send live video feeds to the studio for broadcast production, replacing expensive satellite trucks.
+</Card>
+
+**Why Moq?**
+- **Professional quality**: Support for high-bitrate contributions
+- **Reliable delivery**: QUIC's congestion control and retransmission
+- **Low latency**: Critical for live-to-air scenarios
+- **Cost effective**: Uses internet connectivity instead of satellite
+
+### CDN Distribution
+
+Distribute live content globally through a network of relays.
+
+<Card title="Example: Global Live Event" icon="globe">
+  A concert streamed simultaneously to viewers worldwide with regional CDN nodes ensuring low latency everywhere.
+</Card>
+
+**Why Moq?**
+- **Geographic distribution**: Deploy relays in multiple regions
+- **Automatic routing**: Viewers connect to nearest relay
+- **Edge caching**: Popular streams cached at the edge
+- **Clustering**: Relays form a mesh for efficient distribution
+
+**Global Architecture:**
+```
+Origin → Root Relay → Regional Relays → Edge Relays → Viewers
+           (US)         (EU, APAC)        (cities)
+```
+
+## Beyond Video
+
+### Real-Time Telemetry
+
+Stream sensor data, metrics, or application telemetry in real-time.
+
+<Card title="Example: IoT Monitoring Dashboard" icon="chart-line">
+  Monitor thousands of IoT sensors in real-time, with dashboards updating as data arrives.
+</Card>
+
+**Why Moq?**
+- **Generic protocol**: Not limited to media
+- **Multiple streams**: Each sensor as a track
+- **Efficient multiplexing**: Thousands of tracks over one connection
+- **Partial reliability**: Drop old data if falling behind
+
+### Live Collaboration
+
+Real-time collaborative editing and interaction.
+
+<Card title="Example: Collaborative Whiteboard" icon="draw-polygon">
+  Multiple users drawing on a shared canvas with changes appearing in real-time for everyone.
+</Card>
+
+**Why Moq?**
+- **Low latency**: Changes appear immediately
+- **Conflict resolution**: Track structure helps manage updates
+- **Scalable**: Add viewers without impacting performance
+- **Cursor tracking**: Non-media tracks for user interactions
+
+### Live Chat & Social
+
+Power real-time chat and social features alongside media.
+
+<Card title="Example: Live Shopping" icon="shopping-cart">
+  A live shopping show where viewers chat, react, and purchase items in real-time while watching the broadcast.
+</Card>
+
+**Why Moq?**
+- **Synchronized**: Chat synced with video timeline
+- **Scalable**: Thousands of concurrent chatters
+- **Rich content**: Send structured data, not just text
+- **Moderation**: Track structure enables filtering and moderation
+
+## Emerging Use Cases
+
+### Virtual & Augmented Reality
+
+Stream VR/AR content with the low latency required for comfortable experiences.
+
+**Challenges:**
+- **High throughput**: 360° video requires high bitrates
+- **Ultra-low latency**: Motion sickness prevention
+- **Spatial audio**: Multiple audio tracks for immersion
+
+**How Moq helps:**
+- QUIC's efficient multiplexing
+- Partial reliability for older frames
+- Separate tracks for different viewport tiles
+
+### Cloud Gaming
+
+Stream interactive game video with real-time input.
+
+**Challenges:**
+- **Round-trip latency**: Input → render → stream → display
+- **Visual quality**: High frame rates and resolution
+- **Network variability**: Adapt to changing conditions
+
+**How Moq helps:**
+- Sub-second latency for responsive gameplay
+- Adaptive streaming for quality/latency trade-offs
+- Efficient protocol reduces overhead
+
+### Live Commerce
+
+Shoppable live streams with synchronized product displays.
+
+**Challenges:**
+- **Synchronized UI**: Product popups timed with video
+- **High concurrency**: Flash sales with thousands of buyers
+- **Rich interaction**: Comments, likes, purchases
+
+**How Moq helps:**
+- Timeline synchronization across tracks
+- Scalable architecture for concurrent users
+- Multiple track types for different data
+
+## Architecture Patterns
+
+### Edge Publishing
+
+Publish from the edge, close to content creation:
+
+```
+Publisher → Edge Relay → Regional Relay → Root Relay
+                ↓              ↓             ↓
+            Viewers        Viewers       Viewers
+```
+
+**Benefits:**
+- Lower latency for nearby viewers
+- Reduced bandwidth to origin
+- Fault tolerance
+
+### Multi-CDN
+
+Distribute across multiple CDN providers:
+
+```
+Origin → CDN Provider A → Viewers
+       → CDN Provider B → Viewers
+       → CDN Provider C → Viewers
+```
+
+**Benefits:**
+- Redundancy and failover
+- Geographic optimization
+- Cost optimization
+
+### Hybrid WebRTC + Moq
+
+Combine WebRTC for peer-to-peer with Moq for scale:
+
+```
+P2P Mesh (WebRTC)
+     ↓
+Moq Bridge
+     ↓
+Moq Distribution (scale)
+```
+
+**Benefits:**
+- Low latency for active participants
+- Scalable distribution for viewers
+- Gradual migration path
+
+## Choosing Moq
+
+Moq is ideal when you need:
+
+<CardGroup cols={2}>
+  <Card title="Real-time Latency" icon="clock">
+    Sub-second latency is critical for your use case
+  </Card>
+  <Card title="Massive Scale" icon="chart-network">
+    You need to reach thousands or millions of viewers
+  </Card>
+  <Card title="Modern Stack" icon="laptop-code">
+    You prefer browser-native technologies (WebTransport, WebCodecs)
+  </Card>
+  <Card title="Full Control" icon="sliders">
+    You want control over your media pipeline
+  </Card>
+  <Card title="Live Data" icon="signal-stream">
+    Your application streams any live data, not just video
+  </Card>
+  <Card title="Global Distribution" icon="earth-americas">
+    You need to reach a worldwide audience efficiently
+  </Card>
+</CardGroup>
+
+## Not a Good Fit?
+
+Moq might not be the best choice if:
+
+- **On-demand content**: Use HLS/DASH for VOD
+- **Extreme latency requirements**: WebRTC P2P may be better for less than 100ms
+- **Legacy client support**: Older browsers without WebTransport
+- **Simple, low-scale needs**: Traditional streaming may be simpler
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="play" href="/quickstart">
+    Try the demo to see Moq in action
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Learn how Moq achieves these capabilities
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Start building your use case
+  </Card>
+  <Card title="Production" icon="server" href="/guides/production">
+    Deploy Moq for production workloads
+  </Card>
+</CardGroup>

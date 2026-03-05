@@ -1,0 +1,336 @@
+---
+title: moq-lite Protocol
+description: Deep dive into the generic pub/sub transport layer that powers Moq
+---
+
+# moq-lite Protocol
+
+**moq-lite** is the core transport protocol that provides real-time pub/sub capabilities over QUIC. It's designed to be generic, efficient, and CDN-friendly.
+
+<Note>
+While compatible with a subset of the IETF MoQ specification, moq-lite focuses on practical features and deployability. We highly recommend using moq-lite over the full IETF standard until at least draft-30.
+</Note>
+
+## Overview
+
+moq-lite provides a structured way to publish and subscribe to live data streams with:
+
+- **Built-in concurrency**: Multiple streams delivered in parallel
+- **Automatic deduplication**: Efficient use of network resources
+- **Flexible prioritization**: Control delivery order based on importance
+- **Partial reliability**: Trade reliability for latency when needed
+- **CDN-compatible**: Simple rules that relays can enforce without application knowledge
+
+## The Hierarchy
+
+moq-lite organizes data in a hierarchical structure from largest to smallest:
+
+```
+Origin
+ └── Broadcast(s)
+      └── Track(s)
+           └── Group(s)
+                └── Frame(s)
+```
+
+### Origin
+
+An **Origin** is a collection of broadcasts produced by one or more sessions.
+
+```rust
+use moq_lite::Origin;
+
+let origin = Origin::new();
+```
+
+Think of an origin as a "namespace" for all your broadcasts. Multiple publishers can contribute to the same origin.
+
+### Broadcast
+
+A **Broadcast** is a collection of tracks produced by a single publisher.
+
+```rust
+let broadcast = origin.create("my-broadcast");
+```
+
+Broadcasts represent a single "thing" being streamed - for example:
+- A live video stream (with video, audio, and chat tracks)
+- A telemetry feed (with sensor data tracks)
+- A real-time game state (with player position tracks)
+
+**Key properties:**
+- Has a unique name/path
+- Published by a single source
+- Can contain multiple tracks
+- Can be announced for discovery
+
+### Track
+
+A **Track** is a collection of groups within a broadcast, delivered out-of-order until they expire.
+
+```rust
+let track = broadcast.create_track("video/720p");
+```
+
+Tracks represent individual streams of related data:
+- Video renditions (e.g., "video/1080p", "video/720p")
+- Audio channels (e.g., "audio/en", "audio/es")
+- Chat messages (e.g., "chat")
+- Telemetry (e.g., "metrics")
+
+**Key properties:**
+- **Out-of-order delivery**: Groups within a track can arrive in any order
+- **Time-based expiration**: Old groups can be dropped
+- **Independent**: Each track is delivered independently
+- **Metadata**: Contains delivery hints (priority, caching rules)
+
+<Info>
+Tracks are like HTTP/2 streams - multiplexed, independent, and prioritizable.
+</Info>
+
+### Group
+
+A **Group** is a collection of frames delivered in-order until cancelled.
+
+```rust
+let group = track.create_group(timestamp);
+```
+
+Groups represent atomic units of content that must be delivered together:
+- A video Group of Pictures (GOP)
+- An audio frame
+- A chat message
+- A complete JSON document
+
+**Key properties:**
+- **In-order delivery**: Frames arrive in sequence
+- **Atomic**: Either all frames arrive or the group is abandoned
+- **Cancellable**: Can be aborted mid-delivery if no longer relevant
+- **Independent**: Each group uses a separate QUIC stream
+
+<Tip>
+Groups map to QUIC streams for efficient multiplexing and cancellation.
+</Tip>
+
+### Frame
+
+A **Frame** is a sized chunk of data within a group.
+
+```rust
+let frame = group.write(Bytes::from(data)).await?;
+```
+
+Frames are the actual payload:
+- Encoded video frame
+- Audio sample
+- Text message
+- Binary data
+
+**Key properties:**
+- **Fixed size**: Size is known upfront
+- **Ordered**: Delivered in sequence within a group
+- **Chunked**: Can be split across multiple QUIC packets
+
+## Producer/Consumer API
+
+The moq-lite API is built around producer/consumer pairs at each level:
+
+<Tabs>
+  <Tab title="Rust Producer">
+    ```rust
+    use moq_lite::{Origin, Broadcast, Track, Group};
+    use bytes::Bytes;
+
+    // Create an origin
+    let origin = Origin::new();
+
+    // Create a broadcast
+    let mut broadcast = origin.create("livestream");
+
+    // Create a track
+    let mut track = broadcast.create_track("video/1080p");
+
+    // Create a group (e.g., for a video GOP)
+    let mut group = track.create_group(timestamp);
+
+    // Write frames
+    for frame_data in video_frames {
+        group.write(Bytes::from(frame_data)).await?;
+    }
+
+    // Close the group
+    group.close().await?;
+    ```
+  </Tab>
+  <Tab title="TypeScript Producer">
+    ```typescript
+    import { Client, Broadcast } from '@moq/lite'
+
+    // Connect to relay
+    const client = await Client.connect('https://relay.example.com')
+
+    // Create a broadcast
+    const broadcast = new Broadcast(client, 'livestream')
+
+    // Create a track
+    const track = broadcast.createTrack('video/1080p')
+
+    // Create a group
+    const group = track.createGroup(timestamp)
+
+    // Write frames
+    for (const frameData of videoFrames) {
+      await group.write(frameData)
+    }
+
+    // Close the group
+    await group.close()
+    ```
+  </Tab>
+</Tabs>
+
+<Tabs>
+  <Tab title="Rust Consumer">
+    ```rust
+    use moq_lite::Session;
+
+    // Subscribe to a broadcast
+    let broadcast = session.subscribe("livestream").await?;
+
+    // Get tracks
+    while let Some(track) = broadcast.next_track().await? {
+        println!("Track: {}", track.name());
+
+        // Get groups
+        while let Some(group) = track.next_group().await? {
+            // Get frames
+            while let Some(frame) = group.next_frame().await? {
+                process_frame(frame.data());
+            }
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="TypeScript Consumer">
+    ```typescript
+    import { Client } from '@moq/lite'
+
+    // Subscribe to a broadcast
+    const client = await Client.connect('https://relay.example.com')
+    const broadcast = await client.subscribe('livestream')
+
+    // Get tracks
+    for await (const track of broadcast.tracks()) {
+      console.log('Track:', track.name)
+
+      // Get groups
+      for await (const group of track.groups()) {
+        // Get frames
+        for await (const frame of group.frames()) {
+          processFrame(frame.data)
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Delivery Semantics
+
+moq-lite supports different delivery patterns based on metadata:
+
+### Priority
+
+Controls which content is delivered first when bandwidth is constrained:
+
+- **Higher priority**: Delivered before lower priority (e.g., audio > video)
+- **Same priority**: Delivered in order of creation
+- **Dynamic**: Can change based on network conditions
+
+### Caching
+
+Controls whether content is cached at relays:
+
+- **Cacheable**: Stored and forwarded to late joiners
+- **Ephemeral**: Discarded if no active subscribers
+
+### Expiration
+
+Controls how long content remains relevant:
+
+- **Time-based**: Discard after N seconds
+- **Sequence-based**: Discard after N newer groups
+- **Explicit**: Discard when marked as expired
+
+## Network Characteristics
+
+### Deduplication
+
+When multiple subscribers request the same content:
+
+1. Relay receives one copy from publisher
+2. Relay forwards to all subscribers
+3. Network bandwidth scales with subscriber count, not stream count
+
+### Concurrency
+
+Multiple tracks and groups are delivered in parallel:
+
+- Each group uses a separate QUIC stream
+- Tracks are multiplexed automatically
+- No head-of-line blocking between groups
+
+### Partial Reliability
+
+Based on QUIC's stream cancellation:
+
+- Groups can be abandoned if they fall behind
+- Newer content prioritized over old
+- Application controls trade-off between completeness and latency
+
+## Relay Behavior
+
+The moq-relay server operates on moq-lite primitives:
+
+```toml relay.toml
+[server]
+listen = "[::]:4443"
+
+[server.tls]
+cert = "cert.pem"
+key = "key.pem"
+
+[auth]
+key = "auth.jwk"
+public = "demo"  # Allow anonymous access to /demo
+```
+
+The relay:
+- Accepts publish and subscribe connections
+- Forwards groups based on subscriptions
+- Deduplicates identical subscriptions
+- Enforces authentication rules
+- Does **not** inspect or understand media
+
+## Protocol Specification
+
+For the detailed wire format and protocol specification, see:
+
+- [moq-lite specification](https://moq-dev.github.io/drafts/draft-lcurley-moq-lite.html)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="hang Media Layer" icon="film" href="/concepts/hang">
+    Learn how media is encoded on top of moq-lite
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand the full protocol stack
+  </Card>
+  <Card title="Publishing Guide" icon="upload" href="/guides/publishing">
+    Start publishing with moq-lite
+  </Card>
+  <Card title="Relay Setup" icon="server" href="/guides/relay-setup">
+    Deploy your own moq-relay server
+  </Card>
+</CardGroup>

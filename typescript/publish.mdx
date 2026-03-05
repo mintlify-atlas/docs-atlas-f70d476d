@@ -1,0 +1,537 @@
+---
+title: "@moq/publish"
+description: "Publish live media streams over MoQ"
+---
+
+**[@moq/publish](https://www.npmjs.com/package/@moq/publish)** provides a Web Component and JavaScript API for publishing live media streams using camera or screen capture.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/publish
+```
+
+```bash bun
+bun add @moq/publish
+```
+
+```bash pnpm
+pnpm add @moq/publish
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.2.2
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `@moq/hang`, `@moq/lite`, `@moq/signals`, `@moq/ui-core`
+
+## Web Component Usage
+
+The easiest way to publish MoQ streams is using the `<moq-publish>` web component.
+
+<Steps>
+
+<Step title="Import the element">
+
+```typescript
+import "@moq/publish/element";
+```
+
+Or use a CDN:
+
+```html
+<script type="module" src="https://unpkg.com/@moq/publish/dist/element.js"></script>
+```
+
+</Step>
+
+<Step title="Add to HTML">
+
+```html
+<moq-publish 
+  url="https://relay.quic.video"
+  fingerprint="https://relay.quic.video/fingerprint"
+  broadcast="my-stream"
+  token="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...">
+</moq-publish>
+```
+
+</Step>
+
+<Step title="Style the component">
+
+```css
+moq-publish {
+  width: 640px;
+  height: 480px;
+  display: block;
+}
+```
+
+</Step>
+
+</Steps>
+
+## Web Component API
+
+### Attributes
+
+```html
+<moq-publish
+  url="https://relay.quic.video"
+  fingerprint="https://relay.quic.video/fingerprint"
+  broadcast="my-stream"
+  token="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+  source="camera"
+  video="true"
+  audio="true"
+  preview="true">
+</moq-publish>
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `url` | string | WebTransport URL of the MoQ relay |
+| `fingerprint` | string | URL to relay's certificate fingerprint |
+| `broadcast` | string | Name of the broadcast to publish |
+| `token` | string | JWT authentication token (required for publishing) |
+| `source` | "camera" \| "screen" | Media source (default: "camera") |
+| `video` | boolean | Enable video (default: true) |
+| `audio` | boolean | Enable audio (default: true) |
+| `preview` | boolean | Show local preview (default: true) |
+
+### Properties
+
+```typescript
+const publish = document.querySelector("moq-publish");
+
+// Connection state
+console.log(publish.connected); // boolean
+console.log(publish.error); // Error | null
+
+// Publishing state
+console.log(publish.publishing); // boolean
+console.log(publish.source); // "camera" | "screen"
+
+// Media state
+console.log(publish.videoEnabled); // boolean
+console.log(publish.audioEnabled); // boolean
+
+// Media tracks
+console.log(publish.tracks); // MediaStreamTrack[]
+```
+
+### Methods
+
+```typescript
+const publish = document.querySelector("moq-publish");
+
+// Publishing control
+await publish.start();
+publish.stop();
+
+// Source selection
+await publish.useCamera();
+await publish.useScreen();
+
+// Media control
+publish.enableVideo();
+publish.disableVideo();
+publish.enableAudio();
+publish.disableAudio();
+
+// Connection control
+await publish.connect();
+publish.disconnect();
+```
+
+### Events
+
+```typescript
+const publish = document.querySelector("moq-publish");
+
+// Connection events
+publish.addEventListener("connected", () => {
+  console.log("Connected to relay");
+});
+
+publish.addEventListener("disconnected", () => {
+  console.log("Disconnected from relay");
+});
+
+publish.addEventListener("error", (e) => {
+  console.error("Error:", e.detail);
+});
+
+// Publishing events
+publish.addEventListener("started", () => {
+  console.log("Publishing started");
+});
+
+publish.addEventListener("stopped", () => {
+  console.log("Publishing stopped");
+});
+
+// Media events
+publish.addEventListener("track", (e) => {
+  console.log("Track added:", e.detail);
+});
+
+publish.addEventListener("source", (e) => {
+  console.log("Source changed:", e.detail);
+});
+```
+
+## JavaScript API
+
+For more control, use the JavaScript API directly:
+
+```typescript
+import * as Publish from "@moq/publish";
+import * as Connection from "@moq/lite/Connection";
+
+// Connect to relay
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint",
+  token: "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+});
+
+// Publish broadcast
+const publisher = await conn.publish("my-stream");
+
+// Create publish instance
+const publish = new Publish.Broadcast({
+  publisher: publisher,
+  video: true,
+  audio: true
+});
+
+// Start publishing
+await publish.start();
+```
+
+### Broadcast API
+
+```typescript
+import { Broadcast } from "@moq/publish";
+
+const broadcast = new Broadcast({
+  publisher: publisher,
+  video: true,
+  audio: true,
+  source: "camera" // or "screen"
+});
+
+// Start/stop
+await broadcast.start();
+broadcast.stop();
+
+// State
+const state = broadcast.state; // Signal<BroadcastState>
+state.subscribe(s => {
+  console.log("Publishing:", s.publishing);
+  console.log("Tracks:", s.tracks);
+});
+```
+
+### Video API
+
+```typescript
+import * as Video from "@moq/publish/Video";
+
+const video = new Video.Encoder({
+  track: mediaStreamTrack,
+  broadcast: broadcast,
+  codec: "avc1.64001f", // H.264 High Profile
+  width: 1920,
+  height: 1080,
+  framerate: 30,
+  bitrate: 5_000_000
+});
+
+await video.start();
+
+// Video state
+video.state.subscribe(state => {
+  console.log("Frames encoded:", state.framesEncoded);
+  console.log("Bytes sent:", state.bytesSent);
+});
+```
+
+### Audio API
+
+```typescript
+import * as Audio from "@moq/publish/Audio";
+
+const audio = new Audio.Encoder({
+  track: mediaStreamTrack,
+  broadcast: broadcast,
+  codec: "opus",
+  sampleRate: 48000,
+  channels: 2,
+  bitrate: 128_000
+});
+
+await audio.start();
+
+// Audio state
+audio.state.subscribe(state => {
+  console.log("Samples encoded:", state.samplesEncoded);
+});
+```
+
+### Source API
+
+Capture media from different sources:
+
+```typescript
+import * as Source from "@moq/publish/Source";
+
+// Camera
+const cameraStream = await Source.getCamera({
+  video: {
+    width: 1920,
+    height: 1080,
+    frameRate: 30
+  },
+  audio: true
+});
+
+// Screen
+const screenStream = await Source.getScreen({
+  video: {
+    width: 1920,
+    height: 1080,
+    frameRate: 30
+  },
+  audio: true // Include system audio if available
+});
+
+// Custom constraints
+const stream = await Source.getCamera({
+  video: {
+    deviceId: "specific-device-id",
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 60 }
+  },
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  }
+});
+```
+
+### Chat API
+
+```typescript
+import * as Chat from "@moq/publish/Chat";
+
+const chat = new Chat.Sender({
+  broadcast: broadcast
+});
+
+await chat.send({
+  author: "Alice",
+  text: "Hello, world!"
+});
+```
+
+## Complete Example
+
+Here's a complete HTML page:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MoQ Publish Example</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui;
+    }
+    
+    moq-publish {
+      width: 640px;
+      height: 480px;
+      display: block;
+      border: 2px solid #333;
+      border-radius: 8px;
+    }
+    
+    .controls {
+      margin-top: 20px;
+    }
+    
+    button {
+      padding: 10px 20px;
+      margin-right: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MoQ Publisher</h1>
+  
+  <moq-publish 
+    id="publisher"
+    url="https://relay.quic.video"
+    fingerprint="https://relay.quic.video/fingerprint"
+    broadcast="my-stream">
+  </moq-publish>
+  
+  <div class="controls">
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+    <button id="camera">Camera</button>
+    <button id="screen">Screen</button>
+  </div>
+  
+  <script type="module">
+    import "@moq/publish/element";
+    
+    const publish = document.getElementById("publisher");
+    
+    // Set token (get from your auth service)
+    publish.token = "your-jwt-token";
+    
+    // Event listeners
+    publish.addEventListener("connected", () => {
+      console.log("Connected!");
+    });
+    
+    publish.addEventListener("started", () => {
+      console.log("Publishing started");
+    });
+    
+    publish.addEventListener("error", (e) => {
+      console.error("Error:", e.detail);
+    });
+    
+    // Button handlers
+    document.getElementById("start").onclick = () => {
+      publish.start();
+    };
+    
+    document.getElementById("stop").onclick = () => {
+      publish.stop();
+    };
+    
+    document.getElementById("camera").onclick = () => {
+      publish.useCamera();
+    };
+    
+    document.getElementById("screen").onclick = () => {
+      publish.useScreen();
+    };
+  </script>
+</body>
+</html>
+```
+
+## TypeScript Example
+
+```typescript
+import "@moq/publish/element";
+import type { MoqPublish } from "@moq/publish/element";
+import { generateToken } from "@moq/token";
+
+// Generate auth token
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-stream",
+  role: "publisher"
+});
+
+// Type-safe element access
+const publish = document.querySelector("moq-publish") as MoqPublish;
+
+publish.url = "https://relay.quic.video";
+publish.fingerprint = "https://relay.quic.video/fingerprint";
+publish.broadcast = "my-stream";
+publish.token = token;
+
+await publish.start();
+```
+
+## Authentication
+
+Publishing requires a JWT token with publisher role:
+
+```typescript
+import { generateToken } from "@moq/token";
+
+const token = await generateToken({
+  key: privateKey,
+  audience: "https://relay.quic.video",
+  subject: "my-stream",
+  role: "publisher",
+  expiresIn: "1h"
+});
+
+const publish = document.querySelector("moq-publish");
+publish.token = token;
+```
+
+See [@moq/token](/typescript/token) for more details.
+
+## UI Customization
+
+The publish component includes a Solid.js UI that can be customized:
+
+```typescript
+import { Publish } from "@moq/publish/ui";
+import { render } from "solid-js/web";
+
+const app = document.getElementById("app");
+
+render(() => (
+  <Publish 
+    url="https://relay.quic.video"
+    fingerprint="https://relay.quic.video/fingerprint"
+    broadcast="my-stream"
+    token={token}
+    theme="dark"
+  />
+), app);
+```
+
+See [@moq/ui-core](/typescript/ui-core) for theming options.
+
+## Browser Support
+
+Requires:
+- WebTransport API (Chrome 97+, Edge 97+, Opera 83+)
+- WebCodecs API (Chrome 94+, Edge 94+, Opera 80+)
+- MediaDevices API (all modern browsers)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    Watch the streams you publish
+  </Card>
+  
+  <Card title="@moq/token" icon="key" href="/typescript/token">
+    Generate authentication tokens
+  </Card>
+  
+  <Card title="@moq/hang" icon="film" href="/typescript/hang">
+    Learn about the media layer
+  </Card>
+  
+  <Card title="@moq/ui-core" icon="palette" href="/typescript/ui-core">
+    Customize the UI theme
+  </Card>
+</CardGroup>

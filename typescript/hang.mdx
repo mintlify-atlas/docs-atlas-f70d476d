@@ -1,0 +1,401 @@
+---
+title: "@moq/hang"
+description: "Media encoding and WebCodecs integration for MoQ"
+---
+
+**[@moq/hang](https://www.npmjs.com/package/@moq/hang)** provides media-specific encoding and decoding on top of @moq/lite, with WebCodecs integration for handling audio and video.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/hang @moq/lite
+```
+
+```bash bun
+bun add @moq/hang @moq/lite
+```
+
+```bash pnpm
+pnpm add @moq/hang @moq/lite
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.2.0
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `@moq/lite`, `@moq/signals`, `zod`, libavjs polyfill, SVTA CML
+
+## Overview
+
+Hang provides the media layer for MoQ, handling:
+
+- **Catalog**: JSON track describing available media tracks and their codec properties
+- **Container**: Encoding/decoding of timestamped codec bitstreams
+- **WebCodecs Integration**: Work with VideoEncoder, AudioEncoder, VideoDecoder, AudioDecoder
+
+## Exports
+
+```typescript
+import * as Catalog from "@moq/hang/catalog";
+import * as Container from "@moq/hang/container";
+import * as Moq from "@moq/hang/Moq";
+import * as Signals from "@moq/hang/Signals";
+```
+
+The library exports:
+
+- `Catalog` - Catalog format for describing tracks
+- `Container` - Container format for framing codec data
+- `Moq` - Re-export of @moq/lite
+- `Signals` - Re-export of @moq/signals
+
+## Catalog
+
+The catalog is a JSON object describing the available tracks and their properties.
+
+### Catalog Format
+
+```typescript
+import type { Catalog } from "@moq/hang/catalog";
+
+const catalog: Catalog = {
+  version: 1,
+  tracks: [
+    {
+      name: "video",
+      kind: "video",
+      codec: "avc1.64001f", // H.264 High Profile
+      width: 1920,
+      height: 1080,
+      framerate: 30,
+      bitrate: 5000000
+    },
+    {
+      name: "audio",
+      kind: "audio",
+      codec: "opus",
+      sampleRate: 48000,
+      channels: 2,
+      bitrate: 128000
+    }
+  ]
+};
+```
+
+### Publishing a Catalog
+
+```typescript
+import * as Catalog from "@moq/hang/catalog";
+import { Track } from "@moq/lite";
+
+const catalogTrack = new Track(".catalog");
+const catalogData = Catalog.encode({
+  version: 1,
+  tracks: [
+    { name: "video", kind: "video", codec: "avc1.64001f" },
+    { name: "audio", kind: "audio", codec: "opus" }
+  ]
+});
+
+const group = catalogTrack.appendGroup();
+await group.write(catalogData);
+await group.close();
+```
+
+### Reading a Catalog
+
+```typescript
+import * as Catalog from "@moq/hang/catalog";
+
+// Read catalog track
+const catalogTrack = await subscriber.subscribe({ name: ".catalog" });
+
+for await (const group of catalogTrack.groups()) {
+  for await (const frame of group.frames()) {
+    const catalog = Catalog.decode(frame);
+    console.log("Available tracks:", catalog.tracks);
+  }
+}
+```
+
+## Container
+
+The container format handles timestamped codec bitstreams.
+
+### Container Format
+
+Each frame in the container consists of:
+- Timestamp (microseconds)
+- Codec-specific bitstream data
+
+### Encoding Video Frames
+
+```typescript
+import * as Container from "@moq/hang/container";
+import { Track } from "@moq/lite";
+
+const videoTrack = new Track("video");
+
+// Create a VideoEncoder
+const encoder = new VideoEncoder({
+  output: async (chunk, metadata) => {
+    // Encode the chunk with timestamp
+    const data = Container.encodeVideo({
+      timestamp: chunk.timestamp,
+      type: chunk.type, // "key" or "delta"
+      data: new Uint8Array(chunk.byteLength),
+      metadata: metadata
+    });
+    
+    // Write to track
+    const group = videoTrack.appendGroup();
+    await group.write(data);
+    await group.close();
+  },
+  error: (e) => console.error("Encode error:", e)
+});
+
+encoder.configure({
+  codec: "avc1.64001f",
+  width: 1920,
+  height: 1080,
+  bitrate: 5_000_000,
+  framerate: 30
+});
+
+// Encode frames
+const frame = new VideoFrame(videoElement, { timestamp: 0 });
+encoder.encode(frame);
+frame.close();
+```
+
+### Decoding Video Frames
+
+```typescript
+import * as Container from "@moq/hang/container";
+
+const decoder = new VideoDecoder({
+  output: (frame) => {
+    // Display the decoded frame
+    ctx.drawImage(frame, 0, 0);
+    frame.close();
+  },
+  error: (e) => console.error("Decode error:", e)
+});
+
+// Configure from catalog
+decoder.configure({
+  codec: catalogTrack.codec,
+  codedWidth: catalogTrack.width,
+  codedHeight: catalogTrack.height
+});
+
+// Decode frames from track
+for await (const group of videoTrack.groups()) {
+  for await (const frame of group.frames()) {
+    const decoded = Container.decodeVideo(frame);
+    
+    const chunk = new EncodedVideoChunk({
+      type: decoded.type,
+      timestamp: decoded.timestamp,
+      data: decoded.data
+    });
+    
+    decoder.decode(chunk);
+  }
+}
+```
+
+### Encoding Audio Frames
+
+```typescript
+import * as Container from "@moq/hang/container";
+
+const audioEncoder = new AudioEncoder({
+  output: async (chunk, metadata) => {
+    const data = Container.encodeAudio({
+      timestamp: chunk.timestamp,
+      type: chunk.type,
+      data: new Uint8Array(chunk.byteLength),
+      metadata: metadata
+    });
+    
+    const group = audioTrack.appendGroup();
+    await group.write(data);
+    await group.close();
+  },
+  error: (e) => console.error("Audio encode error:", e)
+});
+
+audioEncoder.configure({
+  codec: "opus",
+  sampleRate: 48000,
+  numberOfChannels: 2,
+  bitrate: 128000
+});
+```
+
+### Decoding Audio Frames
+
+```typescript
+const audioDecoder = new AudioDecoder({
+  output: (frame) => {
+    // Play the decoded audio frame
+    // ...
+    frame.close();
+  },
+  error: (e) => console.error("Audio decode error:", e)
+});
+
+audioDecoder.configure({
+  codec: "opus",
+  sampleRate: 48000,
+  numberOfChannels: 2
+});
+
+for await (const group of audioTrack.groups()) {
+  for await (const frame of group.frames()) {
+    const decoded = Container.decodeAudio(frame);
+    
+    const chunk = new EncodedAudioChunk({
+      type: decoded.type,
+      timestamp: decoded.timestamp,
+      data: decoded.data
+    });
+    
+    audioDecoder.decode(chunk);
+  }
+}
+```
+
+## WebCodecs Support
+
+Hang is designed to work with the WebCodecs API:
+
+- `VideoEncoder` / `VideoDecoder`
+- `AudioEncoder` / `AudioDecoder`
+- `VideoFrame` / `AudioData`
+- `EncodedVideoChunk` / `EncodedAudioChunk`
+
+### Supported Codecs
+
+**Video:**
+- H.264 (avc1)
+- H.265 (hev1)
+- VP8
+- VP9
+- AV1
+
+**Audio:**
+- Opus
+- AAC
+- FLAC
+
+## Utilities
+
+The `util` export provides helper functions:
+
+```typescript
+import * as Util from "@moq/hang/util";
+
+// Timestamp utilities
+const microseconds = Util.nowMicroseconds();
+const milliseconds = Util.microsToMillis(microseconds);
+
+// Codec utilities
+const codecInfo = Util.parseCodec("avc1.64001f");
+```
+
+## Browser Support
+
+WebCodecs is supported in:
+
+- Chrome/Edge 94+
+- Opera 80+
+- Safari 16.4+ (limited codec support)
+
+## Node.js Support
+
+For Node.js, use libavjs polyfill (automatically included):
+
+```typescript
+import "@kixelated/libavjs-webcodecs-polyfill";
+```
+
+## Complete Example
+
+Here's a complete example publishing video with catalog:
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { Broadcast, Track } from "@moq/lite";
+import * as Catalog from "@moq/hang/catalog";
+import * as Container from "@moq/hang/container";
+
+// Connect and publish
+const conn = await Connection.connect({ url: "https://relay.quic.video" });
+const broadcast = await conn.publish("my-stream");
+
+// Publish catalog
+const catalogTrack = new Track(".catalog");
+await broadcast.announce(catalogTrack);
+
+const catalogData = Catalog.encode({
+  version: 1,
+  tracks: [{ name: "video", kind: "video", codec: "avc1.64001f" }]
+});
+
+const catalogGroup = catalogTrack.appendGroup();
+await catalogGroup.write(catalogData);
+await catalogGroup.close();
+
+// Publish video
+const videoTrack = new Track("video");
+await broadcast.announce(videoTrack);
+
+const encoder = new VideoEncoder({
+  output: async (chunk) => {
+    const data = Container.encodeVideo({
+      timestamp: chunk.timestamp,
+      type: chunk.type,
+      data: new Uint8Array(chunk.byteLength)
+    });
+    
+    const group = videoTrack.appendGroup();
+    await group.write(data);
+    await group.close();
+  },
+  error: (e) => console.error(e)
+});
+
+encoder.configure({
+  codec: "avc1.64001f",
+  width: 1920,
+  height: 1080
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    Use the watch component to display media
+  </Card>
+  
+  <Card title="@moq/publish" icon="video" href="/typescript/publish">
+    Use the publish component to capture media
+  </Card>
+  
+  <Card title="@moq/lite" icon="code" href="/typescript/moq-lite">
+    Learn about the underlying protocol
+  </Card>
+  
+  <Card title="WebCodecs API" icon="book" href="https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API">
+    Learn about WebCodecs
+  </Card>
+</CardGroup>

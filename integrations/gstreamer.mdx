@@ -1,0 +1,332 @@
+---
+title: GStreamer Plugin
+description: Use Moq with GStreamer pipelines for efficient media processing
+---
+
+# GStreamer Plugin
+
+The Moq GStreamer plugin provides `moqsrc` and `moqsink` elements for integrating Moq into GStreamer pipelines. This enables efficient media processing and streaming with full control over encoding, decoding, and transformations.
+
+<Warning>
+This plugin is currently under development but works well for most use cases. Contributions are welcome!
+</Warning>
+
+## Overview
+
+The GStreamer plugin provides two main elements:
+
+- **moqsink**: Publish media to Moq relays
+- **moqsrc**: Subscribe to Moq broadcasts
+
+## Repository
+
+The plugin is maintained in a separate repository:
+
+<Card title="Moq GStreamer Plugin" icon="github" href="https://github.com/moq-dev/gstreamer">
+  View source code, installation instructions, and examples
+</Card>
+
+## Installation
+
+<Steps>
+
+### Install GStreamer
+
+Ensure GStreamer development libraries are installed:
+
+<CodeGroup>
+
+```bash Ubuntu/Debian
+sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+```
+
+```bash Fedora
+sudo dnf install gstreamer1-devel gstreamer1-plugins-base-devel
+```
+
+```bash macOS
+brew install gstreamer gst-plugins-base
+```
+
+</CodeGroup>
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/moq-dev/gstreamer
+cd gstreamer
+```
+
+### Build the Plugin
+
+```bash
+cargo build --release
+```
+
+### Install to GStreamer
+
+Copy the built plugin to your GStreamer plugins directory:
+
+```bash
+cp target/release/libhang_gst.so ~/.local/share/gstreamer-1.0/plugins/
+```
+
+<Note>
+On macOS, the extension is `.dylib` instead of `.so`.
+</Note>
+
+### Verify Installation
+
+Check that GStreamer recognizes the plugin:
+
+```bash
+gst-inspect-1.0 moqsink
+gst-inspect-1.0 moqsrc
+```
+
+</Steps>
+
+## Publishing with moqsink
+
+### Basic Publishing Pipeline
+
+Publish a test video pattern:
+
+```bash
+gst-launch-1.0 videotestsrc ! x264enc ! \
+  isofmp4mux name=mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://cdn.moq.dev/anon broadcast=test
+```
+
+### Publish from Webcam
+
+Stream from a video device:
+
+<CodeGroup>
+
+```bash Linux (v4l2)
+gst-launch-1.0 v4l2src device=/dev/video0 ! \
+  videoconvert ! x264enc tune=zerolatency ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=webcam
+```
+
+```bash macOS (avfoundation)
+gst-launch-1.0 avfvideosrc ! \
+  videoconvert ! x264enc tune=zerolatency ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=webcam
+```
+
+</CodeGroup>
+
+### Publish with Audio
+
+Include audio in your stream:
+
+```bash
+gst-launch-1.0 \
+  videotestsrc ! videoconvert ! x264enc ! mux.video \
+  audiotestsrc ! audioconvert ! avenc_aac ! mux.audio \
+  isofmp4mux name=mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=test
+```
+
+### Publish a File
+
+Stream a video file:
+
+```bash
+gst-launch-1.0 filesrc location=video.mp4 ! \
+  qtdemux ! h264parse ! mux.video \
+  isofmp4mux name=mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=video
+```
+
+## Subscribing with moqsrc
+
+### Basic Playback Pipeline
+
+Subscribe and play a Moq broadcast:
+
+```bash
+gst-launch-1.0 moqsrc url=https://cdn.moq.dev/anon broadcast=test ! \
+  decodebin ! autovideosink
+```
+
+### Save to File
+
+Record a Moq broadcast to a file:
+
+```bash
+gst-launch-1.0 moqsrc url=https://relay.example.com/anon broadcast=stream ! \
+  filesink location=output.mp4
+```
+
+### Transcode and Republish
+
+Subscribe, transcode, and republish:
+
+```bash
+gst-launch-1.0 \
+  moqsrc url=https://relay.example.com/anon broadcast=source ! \
+  decodebin ! videoconvert ! \
+  x264enc bitrate=1000 ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=transcoded
+```
+
+## moqsink Properties
+
+Configure the `moqsink` element:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `url` | string | required | Relay server URL |
+| `broadcast` | string | required | Broadcast name |
+| `jwt` | string | - | Authentication token |
+
+### Example with Properties
+
+```bash
+gst-launch-1.0 videotestsrc ! x264enc ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url="https://relay.example.com/anon" \
+          broadcast="my-stream" \
+          jwt="<token>"
+```
+
+## moqsrc Properties
+
+Configure the `moqsrc` element:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `url` | string | required | Relay server URL |
+| `broadcast` | string | required | Broadcast name |
+| `jwt` | string | - | Authentication token |
+
+## Advanced Pipelines
+
+### Multi-Bitrate Publishing
+
+Publish multiple quality levels:
+
+```bash
+gst-launch-1.0 videotestsrc ! tee name=t \
+  t. ! queue ! videoscale ! video/x-raw,width=1920,height=1080 ! \
+      x264enc bitrate=5000 ! isofmp4mux ! \
+      moqsink url=https://relay.example.com/anon broadcast=high \
+  t. ! queue ! videoscale ! video/x-raw,width=1280,height=720 ! \
+      x264enc bitrate=2500 ! isofmp4mux ! \
+      moqsink url=https://relay.example.com/anon broadcast=medium
+```
+
+### Screen Capture
+
+Capture and stream your screen:
+
+<CodeGroup>
+
+```bash Linux (X11)
+gst-launch-1.0 ximagesrc ! \
+  videoconvert ! x264enc tune=zerolatency ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=screen
+```
+
+```bash macOS
+gst-launch-1.0 avfvideosrc capture-screen=true ! \
+  videoconvert ! x264enc tune=zerolatency ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 ! \
+  moqsink url=https://relay.example.com/anon broadcast=screen
+```
+
+</CodeGroup>
+
+## Low Latency Configuration
+
+Optimize for minimal latency:
+
+```bash
+gst-launch-1.0 videotestsrc ! \
+  x264enc tune=zerolatency bitrate=2000 \
+          key-int-max=30 bframes=0 \
+          byte-stream=true threads=0 ! \
+  isofmp4mux chunk-duration=1 fragment-duration=1 \
+             streamable=true fragment-mode=first-moov-then-finalise ! \
+  moqsink url=https://relay.example.com/anon broadcast=lowlatency
+```
+
+<Note>
+Key parameters for low latency:
+- `tune=zerolatency`: Disables lookahead
+- `key-int-max=30`: Frequent keyframes (every 1 second at 30fps)
+- `bframes=0`: No B-frames
+- `chunk-duration=1`: 1-second fragments
+</Note>
+
+## Debugging
+
+### Enable Debug Output
+
+Set GStreamer debug level:
+
+```bash
+GST_DEBUG=moqsink:5,moqsrc:5 gst-launch-1.0 ...
+```
+
+### Inspect Pipeline
+
+Visualize your pipeline:
+
+```bash
+GST_DEBUG_DUMP_DOT_DIR=. gst-launch-1.0 ...
+dot -Tpng pipeline.dot -o pipeline.png
+```
+
+## More Examples
+
+Check the repository's `justfile` for additional examples:
+
+```bash
+cd gstreamer
+just --list
+```
+
+## Troubleshooting
+
+### Plugin Not Found
+
+- Verify plugin is in GStreamer plugins directory
+- Run `gst-inspect-1.0 moqsink` to check installation
+- Set `GST_PLUGIN_PATH` if using custom location
+
+### Connection Errors
+
+- Check relay URL is accessible
+- Verify firewall allows UDP traffic
+- Ensure JWT token is valid if using authentication
+
+### Pipeline Errors
+
+- Verify all elements are installed (`gst-inspect-1.0 <element>`)
+- Check element capabilities match (use `gst-inspect-1.0`)
+- Enable debug output to identify bottlenecks
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy a Relay" icon="server" href="/deployment/relay">
+    Set up your own relay server
+  </Card>
+  <Card title="FFmpeg Integration" icon="terminal" href="/integrations/ffmpeg">
+    Alternative command-line publishing
+  </Card>
+  <Card title="Web Playback" icon="globe" href="/integrations/web-component">
+    Watch streams in the browser
+  </Card>
+  <Card title="OBS Plugin" icon="video" href="/integrations/obs">
+    Stream using OBS Studio
+  </Card>
+</CardGroup>

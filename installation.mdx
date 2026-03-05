@@ -1,0 +1,356 @@
+---
+title: Installation
+description: Install Moq libraries for Rust or TypeScript/JavaScript projects
+---
+
+# Installation
+
+Moq provides libraries for both Rust and TypeScript/JavaScript, allowing you to build native applications or browser-based solutions.
+
+## Choose Your Language
+
+<Tabs>
+  <Tab title="Rust">
+    ## Rust Installation
+
+    Moq provides several Rust crates for different use cases.
+
+    ### Prerequisites
+
+    - Rust 1.70 or later
+    - Cargo (comes with Rust)
+
+    ### Core Libraries
+
+    <CodeGroup>
+      ```toml Cargo.toml (moq-lite)
+      [dependencies]
+      moq-lite = "0.15.0"
+      ```
+
+      ```toml Cargo.toml (hang)
+      [dependencies]
+      hang = "0.15.1"
+      moq-lite = "0.15.0"
+      ```
+
+      ```toml Cargo.toml (moq-native)
+      [dependencies]
+      moq-native = "0.5"
+      moq-lite = "0.15.0"
+      ```
+    </CodeGroup>
+
+    ### Available Crates
+
+    | Crate | Version | Description |
+    |-------|---------|-------------|
+    | **moq-lite** | 0.15.0 | Core pub/sub transport protocol with built-in concurrency and deduplication |
+    | **hang** | 0.15.1 | Media-specific encoding/streaming layered on top of moq-lite |
+    | **moq-native** | Latest | Opinionated helpers to configure a Quinn QUIC endpoint |
+    | **moq-token** | Latest | Authentication scheme with JWT token support |
+    | **moq-mux** | Latest | Media muxers and demuxers (fMP4/CMAF, HLS) |
+    | **libmoq** | Latest | C bindings for moq-lite |
+
+    ### Installing CLI Tools
+
+    Moq provides command-line tools for publishing and token generation:
+
+    <CodeGroup>
+      ```bash moq-cli
+      cargo install --git https://github.com/moq-dev/moq moq-cli
+      ```
+
+      ```bash moq-token
+      cargo install --git https://github.com/moq-dev/moq moq-token-cli
+      ```
+
+      ```bash moq-relay
+      cargo install --git https://github.com/moq-dev/moq moq-relay
+      ```
+    </CodeGroup>
+
+    ### Optional Features
+
+    Some crates support optional features:
+
+    ```toml Cargo.toml
+    [dependencies]
+    moq-lite = { version = "0.15.0", features = ["serde"] }
+    moq-native = { version = "0.5", features = ["iroh"] }
+    ```
+
+    Available features:
+    - `serde` - Enable serialization support
+    - `iroh` - Enable P2P connections via iroh
+    - `quinn` - Use Quinn as QUIC backend (default)
+    - `quiche` - Use Quiche as QUIC backend
+
+    ### Documentation
+
+    View Rust documentation:
+
+    ```bash
+    cargo doc --open
+    ```
+
+    Or visit [docs.rs](https://docs.rs) for online documentation:
+    - [moq-lite](https://docs.rs/moq-lite)
+    - [hang](https://docs.rs/hang)
+    - [moq-native](https://docs.rs/moq-native)
+
+  </Tab>
+  <Tab title="TypeScript/JavaScript">
+    ## TypeScript/JavaScript Installation
+
+    Moq provides npm packages for browser-based applications.
+
+    ### Prerequisites
+
+    - Node.js 18+ or Bun 1.0+
+    - A package manager: npm, pnpm, yarn, or bun
+
+    <Note>
+    The Moq team uses **Bun** for development. While npm, pnpm, and yarn should work, Bun is recommended for the best experience.
+    </Note>
+
+    ### Core Libraries
+
+    <CodeGroup>
+      ```bash npm
+      npm install @moq/lite
+      npm install @moq/hang
+      npm install @moq/watch
+      npm install @moq/publish
+      ```
+
+      ```bash pnpm
+      pnpm add @moq/lite
+      pnpm add @moq/hang
+      pnpm add @moq/watch
+      pnpm add @moq/publish
+      ```
+
+      ```bash yarn
+      yarn add @moq/lite
+      yarn add @moq/hang
+      yarn add @moq/watch
+      yarn add @moq/publish
+      ```
+
+      ```bash bun (recommended)
+      bun add @moq/lite
+      bun add @moq/hang
+      bun add @moq/watch
+      bun add @moq/publish
+      ```
+    </CodeGroup>
+
+    ### Available Packages
+
+    | Package | Version | Description |
+    |---------|---------|-------------|
+    | **@moq/lite** | 0.1.5 | Core pub/sub transport protocol for browsers |
+    | **@moq/hang** | 0.2.0 | Core media library: catalog, container, and support |
+    | **@moq/watch** | 0.2.2 | Subscribe to and render MoQ broadcasts (Web Component + JS API) |
+    | **@moq/publish** | Latest | Publish media to MoQ broadcasts (Web Component + JS API) |
+    | **@moq/token** | Latest | Authentication library & CLI for JS/TS environments |
+    | **@moq/ui-core** | Latest | Shared UI components for watch and publish |
+
+    ### Using Web Components
+
+    The easiest way to use Moq in the browser is with Web Components:
+
+    ```html index.html
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <script type="module">
+          import '@moq/watch/ui'
+        </script>
+      </head>
+      <body>
+        <moq-watch 
+          url="https://relay.moq.dev/demo" 
+          name="bbb"
+        ></moq-watch>
+      </body>
+    </html>
+    ```
+
+    ### Using the JavaScript API
+
+    For more control, use the JavaScript API directly:
+
+    ```typescript example.ts
+    import { Client } from '@moq/lite'
+    import { Broadcast } from '@moq/hang'
+
+    // Connect to relay
+    const client = await Client.connect('https://relay.moq.dev/demo')
+
+    // Subscribe to a broadcast
+    const broadcast = new Broadcast(client, 'bbb')
+    await broadcast.ready()
+
+    // Access tracks
+    const tracks = broadcast.tracks()
+    console.log('Available tracks:', tracks)
+    ```
+
+    ### Installing CLI Tools
+
+    The token generation tool can be installed globally:
+
+    <CodeGroup>
+      ```bash npm
+      npm install -g @moq/token
+      ```
+
+      ```bash bun
+      bun install -g @moq/token
+      ```
+    </CodeGroup>
+
+    Then use it:
+
+    ```bash
+    moq-token --help
+    ```
+
+    ### TypeScript Configuration
+
+    For TypeScript projects, ensure your `tsconfig.json` includes:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "types": ["@types/web"]
+      }
+    }
+    ```
+
+  </Tab>
+</Tabs>
+
+## Verifying Installation
+
+<Tabs>
+  <Tab title="Rust">
+    Create a simple test to verify your installation:
+
+    ```rust main.rs
+    use moq_lite::Origin;
+
+    fn main() {
+        let origin = Origin::new();
+        println!("Moq origin created successfully!");
+    }
+    ```
+
+    Run it:
+    ```bash
+    cargo run
+    ```
+  </Tab>
+  <Tab title="TypeScript">
+    Create a simple test to verify your installation:
+
+    ```typescript test.ts
+    import { Client } from '@moq/lite'
+
+    console.log('Moq installed successfully!')
+    console.log('Client:', Client)
+    ```
+
+    Run it:
+    ```bash
+    bun test.ts
+    # or
+    node test.ts
+    ```
+  </Tab>
+</Tabs>
+
+## Development Setup
+
+If you want to contribute to Moq or modify the source code:
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/moq-dev/moq.git
+    cd moq
+    ```
+  </Step>
+  <Step title="Install development dependencies">
+    ```bash
+    just install
+    ```
+  </Step>
+  <Step title="Build everything">
+    ```bash
+    just build
+    ```
+  </Step>
+  <Step title="Run tests">
+    ```bash
+    just check
+    ```
+  </Step>
+</Steps>
+
+## Platform-Specific Notes
+
+<AccordionGroup>
+  <Accordion title="macOS">
+    On macOS, you may need to install additional dependencies:
+
+    ```bash
+    brew install just ffmpeg
+    ```
+  </Accordion>
+  <Accordion title="Linux">
+    On Linux, ensure you have development headers:
+
+    **Ubuntu/Debian:**
+    ```bash
+    sudo apt-get install build-essential pkg-config libssl-dev ffmpeg
+    ```
+
+    **Fedora:**
+    ```bash
+    sudo dnf install gcc pkg-config openssl-devel ffmpeg
+    ```
+  </Accordion>
+  <Accordion title="Windows">
+    Windows support is experimental. We recommend using WSL2 (Windows Subsystem for Linux) for the best experience:
+
+    ```bash
+    wsl --install
+    ```
+
+    Then follow the Linux installation instructions inside WSL.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="play" href="/quickstart">
+    Run the demo application
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand Moq's layered design
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Start publishing media streams
+  </Card>
+  <Card title="Watching" icon="eye" href="/guides/watching">
+    Subscribe to and watch streams
+  </Card>
+</CardGroup>

@@ -1,0 +1,437 @@
+---
+title: moq-token
+description: JWT authentication library and CLI for Media over QUIC
+---
+
+`moq-token` provides JWT token generation and validation for authenticating MoQ sessions. Available as both a library and CLI tool.
+
+## Overview
+
+moq-token supports:
+
+- **JWT generation** with various signing algorithms
+- **Path-based authorization** for publish/subscribe
+- **Symmetric keys** (HMAC)
+- **Asymmetric keys** (RSA, ECDSA, EdDSA)
+- **Token validation** and verification
+
+## Installation
+
+### CLI Tool
+
+Install the `moq-token` binary:
+
+```bash
+cargo install moq-token-cli
+```
+
+The binary is named `moq-token`.
+
+### Library
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+moq-token = "0.5"
+```
+
+## CLI Usage
+
+The `moq-token` CLI generates JWT tokens for authenticating with MoQ relays.
+
+### Generate Token
+
+```bash
+moq-token --key <KEY_FILE> [OPTIONS]
+```
+
+<ParamField path="--key" type="string" required>
+  Path to JWK (JSON Web Key) file
+</ParamField>
+
+<ParamField path="--root" type="string">
+  Grant full access to a path prefix
+  
+  Example: `--root my-app` allows publish/subscribe to `my-app/*`
+</ParamField>
+
+<ParamField path="--pub" type="string">
+  Grant publish access to specific paths (can be repeated)
+  
+  Example: `--pub my-app/stream1 --pub my-app/stream2`
+</ParamField>
+
+<ParamField path="--sub" type="string">
+  Grant subscribe access to specific paths (can be repeated)
+  
+  Example: `--sub my-app/* --sub other-app/public`
+</ParamField>
+
+<ParamField path="--exp" type="duration">
+  Token expiration time (default: 24h)
+  
+  Examples: `1h`, `30m`, `7d`
+</ParamField>
+
+### Examples
+
+#### Full Access Token
+
+```bash
+moq-token --key dev/root.jwk --root my-app
+```
+
+Generates a token with full publish/subscribe access to `my-app/*`.
+
+#### Publisher Token
+
+```bash
+moq-token --key dev/root.jwk \
+  --pub my-app/stream1 \
+  --pub my-app/stream2
+```
+
+Generates a token that can publish to specific streams.
+
+#### Subscriber Token
+
+```bash
+moq-token --key dev/root.jwk \
+  --sub my-app/* \
+  --sub other-app/public
+```
+
+Generates a token that can subscribe to paths (wildcards supported).
+
+#### Short-lived Token
+
+```bash
+moq-token --key dev/root.jwk \
+  --root my-app \
+  --exp 1h
+```
+
+Generates a token that expires in 1 hour.
+
+### Verify Token
+
+Validate a token:
+
+```bash
+moq-token --verify --key dev/root.jwk --token <TOKEN>
+```
+
+## Library Usage
+
+Use moq-token in your Rust application:
+
+### Generate Tokens
+
+```rust
+use moq_token::{TokenGenerator, Claims};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Load signing key
+    let key_data = std::fs::read("dev/root.jwk")?;
+    let generator = TokenGenerator::from_jwk(&key_data)?;
+    
+    // Create claims
+    let claims = Claims {
+        root: Some("my-app".to_string()),
+        pub_paths: vec![],
+        sub_paths: vec![],
+        exp: Some(Duration::from_secs(86400)), // 24 hours
+    };
+    
+    // Generate token
+    let token = generator.generate(&claims)?;
+    println!("Token: {}", token);
+    
+    Ok(())
+}
+```
+
+### Validate Tokens
+
+```rust
+use moq_token::TokenValidator;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Load public key (or same key for symmetric)
+    let key_data = std::fs::read("dev/root.jwk")?;
+    let validator = TokenValidator::from_jwk(&key_data)?;
+    
+    // Validate token
+    let token = "eyJ0eXAiOiJKV1QiLCJhbGciOi...";
+    match validator.validate(token) {
+        Ok(claims) => {
+            println!("Valid token!");
+            println!("Root: {:?}", claims.root);
+            println!("Pub: {:?}", claims.pub_paths);
+            println!("Sub: {:?}", claims.sub_paths);
+        }
+        Err(e) => eprintln!("Invalid token: {}", e),
+    }
+    
+    Ok(())
+}
+```
+
+### Check Authorization
+
+```rust
+use moq_token::{TokenValidator, Claims};
+
+fn check_publish_access(claims: &Claims, path: &str) -> bool {
+    // Check root access
+    if let Some(root) = &claims.root {
+        if path.starts_with(root) {
+            return true;
+        }
+    }
+    
+    // Check specific pub paths
+    claims.pub_paths.iter().any(|p| path == p)
+}
+
+fn check_subscribe_access(claims: &Claims, path: &str) -> bool {
+    // Check root access
+    if let Some(root) = &claims.root {
+        if path.starts_with(root) {
+            return true;
+        }
+    }
+    
+    // Check sub paths (with wildcard support)
+    claims.sub_paths.iter().any(|p| {
+        if p.ends_with("/*") {
+            path.starts_with(&p[..p.len()-2])
+        } else {
+            path == p
+        }
+    })
+}
+```
+
+## Key Management
+
+### Generate Keys
+
+Generate a new JWK for signing tokens:
+
+#### HMAC (Symmetric)
+
+```bash
+openssl rand -base64 32 > secret.key
+```
+
+Convert to JWK:
+
+```json
+{
+  "kty": "oct",
+  "k": "<base64-encoded-secret>"
+}
+```
+
+#### RSA (Asymmetric)
+
+```bash
+# Generate private key
+openssl genrsa -out private.pem 2048
+
+# Extract public key
+openssl rsa -in private.pem -pubout -out public.pem
+
+# Convert to JWK using online tools or libraries
+```
+
+#### ECDSA (Asymmetric)
+
+```bash
+# Generate P-256 key
+openssl ecparam -name prime256v1 -genkey -noout -out private.pem
+
+# Extract public key
+openssl ec -in private.pem -pubout -out public.pem
+```
+
+#### EdDSA (Asymmetric)
+
+```bash
+# Generate Ed25519 key
+openssl genpkey -algorithm Ed25519 -out private.pem
+
+# Extract public key
+openssl pkey -in private.pem -pubout -out public.pem
+```
+
+### JWK Format
+
+Example JWK files:
+
+<CodeGroup>
+
+```json HMAC-SHA256
+{
+  "kty": "oct",
+  "alg": "HS256",
+  "k": "your-base64-encoded-secret"
+}
+```
+
+```json RSA
+{
+  "kty": "RSA",
+  "alg": "RS256",
+  "n": "modulus...",
+  "e": "AQAB",
+  "d": "private-exponent..."
+}
+```
+
+```json ECDSA
+{
+  "kty": "EC",
+  "alg": "ES256",
+  "crv": "P-256",
+  "x": "x-coordinate...",
+  "y": "y-coordinate...",
+  "d": "private-key..."
+}
+```
+
+</CodeGroup>
+
+## Supported Algorithms
+
+### Symmetric (HMAC)
+
+- **HS256** - HMAC-SHA256
+- **HS384** - HMAC-SHA384
+- **HS512** - HMAC-SHA512
+
+### Asymmetric (RSA)
+
+- **RS256** - RSA-SHA256
+- **RS384** - RSA-SHA384
+- **RS512** - RSA-SHA512
+- **PS256** - RSA-PSS-SHA256
+- **PS384** - RSA-PSS-SHA384
+- **PS512** - RSA-PSS-SHA512
+
+### Asymmetric (ECDSA)
+
+- **ES256** - ECDSA-SHA256 (P-256)
+- **ES384** - ECDSA-SHA384 (P-384)
+
+### Asymmetric (EdDSA)
+
+- **EdDSA** - Ed25519
+
+## Token Claims
+
+JWT tokens include the following claims:
+
+```json
+{
+  "root": "my-app",              // Full access to prefix
+  "pub": ["my-app/stream1"],     // Publish paths
+  "sub": ["my-app/*", "other/*"], // Subscribe paths (wildcards)
+  "exp": 1234567890               // Expiration timestamp
+}
+```
+
+<ResponseField name="root" type="string">
+  Grant full publish/subscribe access to a path prefix
+  
+  Example: `"my-app"` allows access to `my-app/*`
+</ResponseField>
+
+<ResponseField name="pub" type="array">
+  List of paths allowed for publishing
+  
+  Example: `["my-app/stream1", "my-app/stream2"]`
+</ResponseField>
+
+<ResponseField name="sub" type="array">
+  List of paths allowed for subscribing (supports wildcards)
+  
+  Example: `["my-app/*", "public/*"]`
+</ResponseField>
+
+<ResponseField name="exp" type="number">
+  Token expiration time (Unix timestamp)
+</ResponseField>
+
+## Integration with moq-relay
+
+Configure moq-relay to use JWT authentication:
+
+```toml relay.toml
+[auth]
+key = "dev/root.jwk"
+public = "anon"  # Allow anonymous access to /anon prefix
+```
+
+Clients pass tokens via query parameters:
+
+```rust
+use moq_native::ClientConfig;
+
+let token = "eyJ0eXAiOiJKV1QiLCJhbGciOi...";
+let url = format!("https://relay.example.com/my-app?jwt={}", token);
+
+let client = ClientConfig::default().init()?;
+let session = client.connect(url.parse()?).await?;
+```
+
+See [moq-relay Authentication](/rust/moq-relay#authentication) for details.
+
+## JWKS Loader
+
+Load public keys from a JWKS endpoint (library only):
+
+```toml
+[dependencies]
+moq-token = { version = "0.5", features = ["jwks-loader"] }
+```
+
+```rust
+use moq_token::JwksLoader;
+
+let loader = JwksLoader::new("https://example.com/.well-known/jwks.json").await?;
+let validator = loader.validator_for_token(token)?;
+```
+
+## Resources
+
+- [Library Documentation](https://docs.rs/moq-token) - Full API reference
+- [Crates.io](https://crates.io/crates/moq-token) - Package page
+- [Source Code](https://github.com/moq-dev/moq/tree/main/rs/moq-token) - GitHub repository
+- [CLI Source](https://github.com/moq-dev/moq/tree/main/rs/moq-token-cli) - CLI tool source
+- [Authentication Guide](/concepts/authentication) - Detailed authentication setup
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="moq-relay" icon="server" href="/rust/moq-relay">
+    Configure relay authentication
+  </Card>
+  
+  <Card title="Authentication Guide" icon="shield" href="/concepts/authentication">
+    Learn about JWT authentication
+  </Card>
+  
+  <Card title="moq-cli" icon="terminal" href="/rust/moq-cli">
+    Use tokens with the CLI
+  </Card>
+  
+  <Card title="moq-native" icon="plug" href="/rust/moq-native">
+    Use tokens in your application
+  </Card>
+</CardGroup>

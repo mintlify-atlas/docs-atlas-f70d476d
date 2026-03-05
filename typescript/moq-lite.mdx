@@ -1,0 +1,311 @@
+---
+title: "@moq/lite"
+description: "Core MoQ protocol implementation for TypeScript"
+---
+
+**[@moq/lite](https://www.npmjs.com/package/@moq/lite)** is the core protocol implementation for Media over QUIC. It provides a generic pub/sub protocol on top of WebTransport.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/lite
+```
+
+```bash bun
+bun add @moq/lite
+```
+
+```bash pnpm
+pnpm add @moq/lite
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.1.5
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `@moq/signals`, `@moq/web-transport-ws`
+
+## Core Concepts
+
+MoQ Lite organizes media into a hierarchical structure:
+
+```
+Broadcast (e.g., "my-stream")
+  └── Track (e.g., "video")
+      └── Group (sequence: 0, 1, 2...)
+          └── Frame (payload bytes)
+```
+
+- **Broadcast**: A collection of tracks produced by a publisher
+- **Track**: A live stream of groups within a broadcast (e.g., video, audio)
+- **Group**: A stream of frames delivered independently over a QUIC stream
+- **Frame**: A sized payload of bytes (codec bitstream)
+
+## Exports
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+import { Broadcast, Track } from "@moq/lite";
+import * as Path from "@moq/lite/Path";
+import * as Time from "@moq/lite/Time";
+import * as Signals from "@moq/lite/Signals";
+```
+
+The library exports:
+
+- `Connection` - Connect to MoQ relays and manage subscriptions
+- `Broadcast` - Publish and manage tracks
+- `Track` - Read/write groups in a track
+- `Group` - Read/write frames in a group
+- `Path` - Path utilities for track names
+- `Time` - Timestamp utilities
+- `Signals` - Re-export of @moq/signals
+- `Varint` - Variable-length integer encoding
+
+## Connection
+
+### Connecting to a Relay
+
+```typescript
+import * as Connection from "@moq/lite/Connection";
+
+const conn = await Connection.connect({
+  url: "https://relay.quic.video",
+  fingerprint: "https://relay.quic.video/fingerprint",
+  token: "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..." // optional
+});
+```
+
+### Subscribing to a Broadcast
+
+```typescript
+// Subscribe to a broadcast by name
+const subscriber = await conn.subscribe("my-broadcast");
+
+// Wait for track announcements
+while (true) {
+  const announced = await subscriber.announced();
+  if (!announced) break; // broadcast closed
+  
+  console.log("Track announced:", announced.track.name);
+  
+  // Subscribe to the track
+  const track = await subscriber.subscribe(announced.track);
+  processTrack(track);
+}
+```
+
+### Publishing a Broadcast
+
+```typescript
+// Publish a broadcast
+const broadcast = await conn.publish("my-broadcast");
+
+// Create a track
+const track = new Track("video");
+await broadcast.announce(track);
+
+// Write groups and frames
+const group = track.appendGroup();
+await group.write(frameData);
+await group.close();
+```
+
+## Broadcast
+
+The `Broadcast` class handles writing and managing tracks.
+
+```typescript
+import { Broadcast, Track } from "@moq/lite";
+
+const broadcast = new Broadcast();
+
+// Create and announce tracks
+const videoTrack = new Track("video");
+const audioTrack = new Track("audio");
+
+await broadcast.announce(videoTrack);
+await broadcast.announce(audioTrack);
+
+// Handle track requests from subscribers
+while (true) {
+  const request = await broadcast.requested();
+  if (!request) break;
+  
+  console.log("Track requested:", request.track.name);
+  console.log("Priority:", request.priority);
+}
+```
+
+## Track
+
+The `Track` class represents a live stream of groups.
+
+### Writing to a Track
+
+```typescript
+import { Track } from "@moq/lite";
+
+const track = new Track("video");
+
+// Append groups sequentially
+const group = track.appendGroup();
+
+// Write frames to the group
+await group.write(frame1);
+await group.write(frame2);
+
+// Close the group when done
+await group.close();
+```
+
+### Reading from a Track
+
+```typescript
+// Iterate over groups
+for await (const group of track.groups()) {
+  console.log("Group sequence:", group.sequence);
+  
+  // Iterate over frames in the group
+  for await (const frame of group.frames()) {
+    console.log("Frame:", frame.byteLength, "bytes");
+    // Process frame...
+  }
+}
+```
+
+## Group
+
+A `Group` represents a sequence of frames delivered over a single QUIC stream.
+
+```typescript
+import { Group } from "@moq/lite";
+
+// Create a group (usually via track.appendGroup())
+const group = track.appendGroup();
+
+console.log("Sequence:", group.sequence);
+
+// Write frames
+const encoder = new TextEncoder();
+await group.write(encoder.encode("Hello"));
+await group.write(encoder.encode("World"));
+
+// Close the group
+await group.close();
+```
+
+## Path and Time
+
+Utility namespaces for working with paths and timestamps:
+
+```typescript
+import * as Path from "@moq/lite/Path";
+import * as Time from "@moq/lite/Time";
+
+// Path utilities
+const trackPath = Path.join("broadcasts", "my-stream", "video");
+const parts = Path.split(trackPath);
+
+// Time utilities
+const now = Time.now(); // Current timestamp
+const offset = Time.offset(timestamp1, timestamp2);
+```
+
+## Error Handling
+
+All async operations can throw errors. Always use try/catch:
+
+```typescript
+try {
+  const conn = await Connection.connect({
+    url: "https://relay.quic.video"
+  });
+  
+  const subscriber = await conn.subscribe("my-broadcast");
+  // ...
+} catch (error) {
+  console.error("Connection failed:", error);
+}
+```
+
+Tracks and broadcasts expose a `closed` promise:
+
+```typescript
+track.closed.then(error => {
+  if (error) {
+    console.error("Track closed with error:", error);
+  } else {
+    console.log("Track closed normally");
+  }
+});
+```
+
+## Reactive State
+
+MoQ Lite uses [@moq/signals](/typescript/signals) for reactive state management:
+
+```typescript
+import { Signal } from "@moq/lite/Signals";
+
+// Tracks have reactive state
+const dispose = track.state.groups.subscribe(groups => {
+  console.log("Groups changed:", groups.length);
+});
+
+// Clean up when done
+dispose();
+```
+
+## Browser Support
+
+MoQ Lite requires WebTransport support:
+
+- Chrome/Edge 97+
+- Opera 83+
+- WebTransport API enabled
+
+## Node.js Support
+
+For Node.js, use a WebTransport polyfill:
+
+```typescript
+import { WebTransport } from "@fails-components/webtransport";
+globalThis.WebTransport = WebTransport as any;
+```
+
+## Zod Validation
+
+Optional Zod schemas are available:
+
+```typescript
+import { schemas } from "@moq/lite/zod";
+import { z } from "zod";
+
+const validated = schemas.trackName.parse("video");
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/hang" icon="film" href="/typescript/hang">
+    Add media encoding/decoding with WebCodecs
+  </Card>
+  
+  <Card title="@moq/signals" icon="bolt" href="/typescript/signals">
+    Learn about the reactive signals library
+  </Card>
+  
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    Use high-level watch component
+  </Card>
+  
+  <Card title="@moq/token" icon="key" href="/typescript/token">
+    Generate authentication tokens
+  </Card>
+</CardGroup>

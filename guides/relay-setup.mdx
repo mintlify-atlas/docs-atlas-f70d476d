@@ -1,0 +1,596 @@
+---
+title: Relay Server Setup
+description: Deploy and configure moq-relay servers for production use
+---
+
+# Relay Server Setup
+
+The **moq-relay** server is the core infrastructure component that forwards subscriptions from publishers to subscribers. This guide covers how to deploy and configure relay servers.
+
+## What is moq-relay?
+
+moq-relay is a server that:
+
+- **Forwards subscriptions**: Routes content from publishers to subscribers
+- **Caches content**: Stores recent data for late joiners
+- **Deduplicates**: Serves multiple subscribers from a single source
+- **Clusters**: Forms multi-node networks for global distribution
+- **Authenticates**: Controls access via JWT tokens
+
+<Info>
+The relay operates on [moq-lite](/concepts/moq-lite) primitives and has **no knowledge of media** - it's a generic pub/sub server.
+</Info>
+
+## Installation
+
+### Binary Installation
+
+```bash
+# Install from source
+cargo install --git https://github.com/moq-dev/moq moq-relay
+
+# Run
+moq-relay config.toml
+```
+
+### Docker
+
+```bash
+# Pull image (when available)
+docker pull moq-dev/moq-relay
+
+# Run with config
+docker run -p 4443:4443/udp -v ./config.toml:/config.toml moq-dev/moq-relay /config.toml
+```
+
+### From Source
+
+```bash
+# Clone repository
+git clone https://github.com/moq-dev/moq.git
+cd moq
+
+# Build
+cargo build --release --bin moq-relay
+
+# Run
+./target/release/moq-relay dev/relay.toml
+```
+
+## Basic Configuration
+
+Create a `relay.toml` configuration file:
+
+### Development Setup
+
+For local development with a self-signed certificate:
+
+```toml relay.toml
+[log]
+level = "debug"
+
+[server]
+# Listen on all interfaces, port 4443
+listen = "[::]:4443"
+
+# Generate self-signed certificate for localhost
+tls.generate = ["localhost"]
+
+# HTTP server for certificate fingerprint and debugging
+[web.http]
+listen = "[::]:4443"
+
+# Allow anonymous access to everything
+[auth]
+public = ""
+```
+
+Start the relay:
+
+```bash
+moq-relay relay.toml
+```
+
+The relay will:
+- Listen on UDP port 4443 for QUIC connections
+- Generate a self-signed certificate for `localhost`
+- Listen on TCP port 4443 for HTTP requests
+- Allow anonymous access to all broadcasts
+
+### Production Setup
+
+For production with a real TLS certificate:
+
+```toml relay.toml
+[log]
+level = "info"
+
+[server]
+# Listen on standard QUIC/WebTransport port
+listen = "[::]:443"
+
+# Use real TLS certificate
+[server.tls]
+cert = "/etc/letsencrypt/live/relay.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/relay.example.com/privkey.pem"
+
+# Optional: HTTPS endpoint for WebSocket fallback
+[web.https]
+listen = "[::]:443"
+cert = "/etc/letsencrypt/live/relay.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/relay.example.com/privkey.pem"
+
+# Authentication required
+[auth]
+key = "/etc/moq/secret.jwk"
+public = "demo"  # Only demo/ is public
+```
+
+## Configuration Options
+
+### Logging
+
+```toml
+[log]
+# Log level: trace, debug, info, warn, error
+level = "info"
+```
+
+Or use the `RUST_LOG` environment variable:
+
+```bash
+RUST_LOG=debug moq-relay relay.toml
+```
+
+### Server
+
+```toml
+[server]
+# Address to listen on
+# IPv6: "[::]:4443"
+# IPv4: "0.0.0.0:4443"
+# Localhost only: "127.0.0.1:4443"
+listen = "[::]:443"
+
+# TLS certificate (required for production)
+[server.tls]
+cert = "cert.pem"
+key = "key.pem"
+
+# OR: Generate self-signed certificate (development only)
+[server.tls]
+generate = ["localhost", "relay.local"]
+```
+
+### Web Endpoints
+
+Optional HTTP/HTTPS servers for debugging and WebSocket fallback:
+
+```toml
+# HTTP server (useful for development)
+[web.http]
+listen = "[::]:8080"
+
+# HTTPS server (for production WebSocket fallback)
+[web.https]
+listen = "[::]:443"
+cert = "cert.pem"
+key = "key.pem"
+```
+
+**Available HTTP endpoints:**
+
+- `GET /certificate.sha256` - TLS certificate fingerprint (for self-signed certs)
+- `GET /announced/*prefix` - List announced broadcasts
+- `GET /fetch/*path` - Fetch latest group from a track
+
+### Authentication
+
+See [Authentication Guide](/guides/authentication) for detailed setup:
+
+```toml
+[auth]
+# Path to JWT signing key
+key = "secret.jwk"
+
+# Optional: Allow anonymous access to specific prefix
+public = "demo"
+
+# Multiple keys for rotation
+keys = ["secret-v1.jwk", "secret-v2.jwk"]
+```
+
+### Clustering
+
+Connect multiple relays together:
+
+```toml
+[cluster]
+# URL of root relay
+root = "https://root.example.com"
+
+# This relay's public address (for advertising)
+node = "https://leaf.example.com"
+
+# Authentication token for cluster communication
+token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+See [Clustering](#clustering-multiple-relays) section below.
+
+### Iroh P2P (Optional)
+
+Enable peer-to-peer connections via [iroh](https://github.com/n0-computer/iroh):
+
+```toml
+[iroh]
+enabled = true
+secret = "/var/lib/moq/iroh-secret.key"
+```
+
+Requires the `iroh` feature:
+
+```bash
+cargo install --git https://github.com/moq-dev/moq moq-relay --features iroh
+```
+
+## Clustering Multiple Relays
+
+For global distribution, deploy multiple relays that work together:
+
+### Architecture
+
+```
+        Root Relay (us-east)
+              │
+      ┌───────┼───────┐
+      │               │
+  Leaf Relay      Leaf Relay
+  (eu-west)       (ap-south)
+      │               │
+   Viewers         Viewers
+```
+
+**Root relay**: Coordinates the cluster, tracks available broadcasts
+
+**Leaf relays**: Accept client connections, forward to/from root
+
+### Root Relay Configuration
+
+```toml root.toml
+[server]
+listen = "[::]:443"
+
+[server.tls]
+cert = "cert.pem"
+key = "key.pem"
+
+[auth]
+key = "secret.jwk"
+public = "demo"
+
+# Root relay doesn't need [cluster] section
+```
+
+### Leaf Relay Configuration
+
+```toml leaf.toml
+[server]
+listen = "[::]:443"
+
+[server.tls]
+cert = "cert.pem"
+key = "key.pem"
+
+[auth]
+key = "public.jwk"  # Same key as root (public key if asymmetric)
+public = "demo"
+
+[cluster]
+# Root relay URL
+root = "https://root.example.com?jwt=CLUSTER_TOKEN"
+
+# This relay's public URL (must be reachable by other relays)
+node = "https://leaf-eu.example.com"
+```
+
+### Generate Cluster Token
+
+```bash
+# Create a token that can publish and subscribe to everything
+moq-token --key secret.jwk sign \
+  --root "" \
+  --publish "" \
+  --subscribe "" \
+  --cluster \
+  > cluster.jwt
+```
+
+Use this token in the `cluster.root` URL.
+
+### How It Works
+
+<Steps>
+  <Step title="Publisher connects to leaf relay">
+    A publisher connects to the geographically nearest leaf relay and starts publishing a broadcast.
+  </Step>
+  <Step title="Leaf announces to root">
+    The leaf relay announces the broadcast to the root relay, advertising its own URL.
+  </Step>
+  <Step title="Subscriber queries root">
+    A subscriber in another region connects to their local leaf and requests the broadcast.
+  </Step>
+  <Step title="Root provides origin">
+    The root tells the subscriber's leaf where the broadcast originates (the publisher's leaf URL).
+  </Step>
+  <Step title="Leaf-to-leaf connection">
+    The subscriber's leaf connects directly to the publisher's leaf to fetch content.
+  </Step>
+  <Step title="Content flows">
+    Content flows: Publisher → Publisher's Leaf → Subscriber's Leaf → Subscriber
+  </Step>
+</Steps>
+
+<Tip>
+This architecture minimizes latency by creating direct paths between regions while using the root only for discovery.
+</Tip>
+
+## TLS Certificate Setup
+
+### Let's Encrypt (Recommended)
+
+Use [certbot](https://certbot.eff.org/) to get free TLS certificates:
+
+<Steps>
+  <Step title="Install certbot">
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install certbot
+
+    # macOS
+    brew install certbot
+    ```
+  </Step>
+  <Step title="Get certificate">
+    ```bash
+    sudo certbot certonly --standalone \
+      -d relay.example.com \
+      --preferred-challenges http
+    ```
+
+    Certificates will be placed in `/etc/letsencrypt/live/relay.example.com/`
+  </Step>
+  <Step title="Configure relay">
+    ```toml
+    [server.tls]
+    cert = "/etc/letsencrypt/live/relay.example.com/fullchain.pem"
+    key = "/etc/letsencrypt/live/relay.example.com/privkey.pem"
+    ```
+  </Step>
+  <Step title="Setup auto-renewal">
+    ```bash
+    # Test renewal
+    sudo certbot renew --dry-run
+
+    # Restart relay after renewal
+    sudo certbot renew --deploy-hook "systemctl restart moq-relay"
+    ```
+  </Step>
+</Steps>
+
+### Self-Signed Certificate (Development)
+
+For development only:
+
+```toml
+[server.tls]
+generate = ["localhost"]
+```
+
+Clients can get the certificate fingerprint:
+
+```bash
+curl http://localhost:4443/certificate.sha256
+```
+
+## Systemd Service
+
+Run moq-relay as a system service:
+
+```ini /etc/systemd/system/moq-relay.service
+[Unit]
+Description=Moq Relay Server
+After=network.target
+
+[Service]
+Type=simple
+User=moq
+Group=moq
+WorkingDirectory=/var/lib/moq
+ExecStart=/usr/local/bin/moq-relay /etc/moq/relay.toml
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/moq
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable moq-relay
+sudo systemctl start moq-relay
+sudo systemctl status moq-relay
+
+# View logs
+sudo journalctl -u moq-relay -f
+```
+
+## Monitoring
+
+### Health Check
+
+Check if relay is running:
+
+```bash
+curl http://relay.example.com:4443/
+```
+
+Should return relay information.
+
+### List Broadcasts
+
+```bash
+# All broadcasts
+curl http://relay.example.com:4443/announced/
+
+# Broadcasts under /demo
+curl http://relay.example.com:4443/announced/demo
+```
+
+### Tokio Console
+
+For detailed async runtime inspection:
+
+```bash
+# Enable tokio-console in relay
+TOKIO_CONSOLE_BIND=127.0.0.1:6680 moq-relay relay.toml
+
+# Connect with tokio-console
+cargo install tokio-console
+tokio-console http://127.0.0.1:6680
+```
+
+### Metrics & Logging
+
+```bash
+# Increase log verbosity
+RUST_LOG=moq_relay=debug,moq_lite=trace moq-relay relay.toml
+
+# Log to file
+moq-relay relay.toml 2>&1 | tee relay.log
+```
+
+## Performance Tuning
+
+### Operating System Limits
+
+```bash
+# Increase file descriptor limit
+ulimit -n 65536
+
+# Or in /etc/security/limits.conf
+moq soft nofile 65536
+moq hard nofile 65536
+```
+
+### QUIC Tuning
+
+```toml
+# Increase receive buffer (allows more concurrent streams)
+[server.quic]
+max_concurrent_streams = 10000
+receive_window = 8388608  # 8 MB
+```
+
+### CPU Affinity
+
+```bash
+# Pin to specific CPU cores
+taskset -c 0-7 moq-relay relay.toml
+```
+
+## Firewall Configuration
+
+### Required Ports
+
+- **UDP 443** (or your configured port) - QUIC/WebTransport
+- **TCP 443** (optional) - HTTPS/WebSocket fallback
+- **TCP 80** (optional) - HTTP debugging endpoint
+
+### UFW (Ubuntu)
+
+```bash
+sudo ufw allow 443/udp
+sudo ufw allow 443/tcp
+sudo ufw allow 80/tcp
+```
+
+### iptables
+
+```bash
+sudo iptables -A INPUT -p udp --dport 443 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+```
+
+### Cloud Provider
+
+Ensure security groups allow:
+- Inbound UDP 443
+- Inbound TCP 443 (if using HTTPS)
+- Inbound TCP 80 (if using HTTP)
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cannot bind to port 443">
+    - Requires root or `CAP_NET_BIND_SERVICE` capability
+    - Use a higher port (e.g., 4443) or:
+    ```bash
+    sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/moq-relay
+    ```
+  </Accordion>
+  <Accordion title="WebTransport connection failed">
+    - Check firewall allows UDP on the configured port
+    - Verify TLS certificate is valid and trusted
+    - For self-signed certs, clients must use fingerprint verification
+    - Check DNS resolves to correct IP
+  </Accordion>
+  <Accordion title="Cluster relays can't connect">
+    - Verify root URL is correct
+    - Check cluster token is valid (`moq-token verify`)
+    - Ensure leaf's `node` URL is reachable from other relays
+    - Check firewall rules between relays
+  </Accordion>
+  <Accordion title="High CPU usage">
+    - Check number of concurrent streams
+    - Verify you're not transcoding (relay shouldn't touch media)
+    - Consider horizontal scaling (add more relays)
+    - Review RUST_LOG level (debug/trace is expensive)
+  </Accordion>
+  <Accordion title="Clients can't publish/subscribe">
+    - Check relay logs for authentication errors
+    - Verify auth configuration in relay.toml
+    - Test token with `moq-token verify`
+    - Ensure client is connecting to correct path
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Setup JWT token authentication
+  </Card>
+  <Card title="Production Guide" icon="gauge-high" href="/guides/production">
+    Production deployment best practices
+  </Card>
+  <Card title="Publishing" icon="upload" href="/guides/publishing">
+    Connect publishers to your relay
+  </Card>
+  <Card title="Watching" icon="eye" href="/guides/watching">
+    Connect viewers to your relay
+  </Card>
+</CardGroup>

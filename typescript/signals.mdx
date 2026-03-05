@@ -1,0 +1,488 @@
+---
+title: "@moq/signals"
+description: "Reactive and safe signals library"
+---
+
+**[@moq/signals](https://www.npmjs.com/package/@moq/signals)** is a reactive signals library providing a safe and efficient way to manage state and side effects.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/signals
+```
+
+```bash bun
+bun add @moq/signals
+```
+
+```bash pnpm
+pnpm add @moq/signals
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.1.3
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Dependencies**: `dequal` (for deep equality checks)
+
+## Overview
+
+Signals provide a reactive programming model where state changes automatically trigger dependent computations and side effects.
+
+### Key Features
+
+- **Reactive**: Automatically track dependencies and rerun effects
+- **Safe**: Prevents common pitfalls like infinite loops
+- **Efficient**: Uses microtasks and deep equality checks
+- **Type-safe**: Full TypeScript support
+- **Framework adapters**: React and Solid.js integrations
+
+## Core Concepts
+
+### Signal
+
+A `Signal` is a container for a reactive value:
+
+```typescript
+import { Signal } from "@moq/signals";
+
+const count = new Signal(0);
+
+console.log(count.peek()); // 0
+
+count.set(1);
+console.log(count.peek()); // 1
+```
+
+### Effect
+
+An `Effect` automatically reruns when signals it depends on change:
+
+```typescript
+import { Signal, Effect } from "@moq/signals";
+
+const count = new Signal(0);
+
+const effect = new Effect((e) => {
+  const value = e.get(count);
+  console.log("Count changed:", value);
+});
+
+// Output: "Count changed: 0"
+
+count.set(1);
+// Output: "Count changed: 1"
+
+effect.close(); // Clean up
+```
+
+## Signal API
+
+### Creating Signals
+
+```typescript
+import { Signal } from "@moq/signals";
+
+// Basic signal
+const name = new Signal("Alice");
+
+// Signal from value or existing signal
+const derived = Signal.from(name); // returns same signal if already a Signal
+const copy = Signal.from("Bob"); // creates new signal
+```
+
+### Reading Values
+
+```typescript
+const count = new Signal(42);
+
+// Get current value (alias: get())
+const value = count.peek();
+console.log(value); // 42
+```
+
+### Setting Values
+
+```typescript
+const count = new Signal(0);
+
+// Set directly
+count.set(10);
+
+// Set based on previous value
+count.set(prev => prev + 1);
+
+// Update (same as set with function)
+count.update(prev => prev * 2);
+
+// Mutate object/array in place
+const list = new Signal([1, 2, 3]);
+list.mutate(arr => {
+  arr.push(4);
+});
+```
+
+### Subscribing to Changes
+
+```typescript
+const count = new Signal(0);
+
+// Subscribe to all changes
+const unsubscribe = count.subscribe(value => {
+  console.log("New value:", value);
+});
+
+count.set(1); // Output: "New value: 1"
+count.set(2); // Output: "New value: 2"
+
+unsubscribe(); // Stop listening
+```
+
+### One-time Notifications
+
+```typescript
+// Get notified once on next change
+const dispose = count.changed(value => {
+  console.log("Count changed once:", value);
+});
+
+count.set(1); // Output: "Count changed once: 1"
+count.set(2); // No output (already disposed)
+```
+
+### Watch (Subscribe + Initial Value)
+
+```typescript
+// Get current value immediately, then subscribe
+const dispose = count.watch(value => {
+  console.log("Count:", value);
+});
+// Output immediately: "Count: 0"
+
+count.set(1);
+// Output: "Count: 1"
+
+dispose();
+```
+
+### Racing Signals
+
+```typescript
+// Wait for the first signal to change
+const signal1 = new Signal("a");
+const signal2 = new Signal("b");
+
+const result = await Signal.race(signal1, signal2);
+// Returns value of whichever signal changes first
+```
+
+## Effect API
+
+### Creating Effects
+
+```typescript
+import { Effect, Signal } from "@moq/signals";
+
+const name = new Signal("Alice");
+
+const effect = new Effect((e) => {
+  const value = e.get(name);
+  console.log("Hello,", value);
+});
+// Output immediately: "Hello, Alice"
+
+name.set("Bob");
+// Output: "Hello, Bob"
+
+effect.close();
+```
+
+### Reading Signals
+
+```typescript
+const count = new Signal(0);
+const multiplier = new Signal(2);
+
+const effect = new Effect((e) => {
+  const c = e.get(count);
+  const m = e.get(multiplier);
+  console.log("Result:", c * m);
+});
+
+// Changes to either signal will rerun the effect
+```
+
+### Setting Signals
+
+```typescript
+const enabled = new Signal(false);
+const status = new Signal("inactive");
+
+const effect = new Effect((e) => {
+  const isEnabled = e.get(enabled);
+  
+  // Temporarily set status, reset on cleanup
+  e.set(status, isEnabled ? "active" : "inactive", "inactive");
+});
+```
+
+### Cleanup Functions
+
+```typescript
+const effect = new Effect((e) => {
+  const ws = new WebSocket("wss://example.com");
+  
+  // Register cleanup
+  e.cleanup(() => {
+    ws.close();
+  });
+});
+
+effect.close(); // Calls cleanup functions
+```
+
+### Nested Effects
+
+```typescript
+const outer = new Effect((e) => {
+  console.log("Outer effect");
+  
+  // Create nested effect
+  e.run((inner) => {
+    console.log("Inner effect");
+  });
+});
+
+outer.close(); // Closes nested effects too
+```
+
+### Async Operations
+
+```typescript
+const url = new Signal("https://api.example.com/data");
+
+const effect = new Effect((e) => {
+  const endpoint = e.get(url);
+  
+  // Spawn async work that blocks effect reload
+  e.spawn(async () => {
+    const response = await fetch(endpoint);
+    const data = await response.json();
+    console.log(data);
+  });
+});
+```
+
+### Timers
+
+```typescript
+const effect = new Effect((e) => {
+  // Run after delay (automatically cleaned up)
+  e.timer(() => {
+    console.log("After 1 second");
+  }, 1000);
+  
+  // Run repeatedly (automatically cleaned up)
+  e.interval(() => {
+    console.log("Every second");
+  }, 1000);
+  
+  // Run nested effect with timeout
+  e.timeout((inner) => {
+    console.log("This effect lasts 5 seconds");
+  }, 5000);
+});
+```
+
+### Event Listeners
+
+```typescript
+const effect = new Effect((e) => {
+  const button = document.querySelector("button");
+  
+  // Add listener (automatically removed on cleanup)
+  e.event(button, "click", () => {
+    console.log("Button clicked");
+  });
+});
+```
+
+### Animation Frames
+
+```typescript
+const effect = new Effect((e) => {
+  // Run on next animation frame
+  e.animate((timestamp) => {
+    console.log("Frame at", timestamp);
+  });
+});
+```
+
+## Advanced Patterns
+
+### Computed Values
+
+```typescript
+const firstName = new Signal("John");
+const lastName = new Signal("Doe");
+
+// Create a "computed" signal using an effect
+const fullName = new Signal("");
+
+const effect = new Effect((e) => {
+  const first = e.get(firstName);
+  const last = e.get(lastName);
+  fullName.set(`${first} ${last}`);
+});
+
+console.log(fullName.peek()); // "John Doe"
+
+firstName.set("Jane");
+console.log(fullName.peek()); // "Jane Doe"
+```
+
+### Conditional Dependencies
+
+```typescript
+const enabled = new Signal(true);
+const value = new Signal(0);
+
+const effect = new Effect((e) => {
+  if (e.get(enabled)) {
+    const v = e.get(value);
+    console.log("Value:", v);
+  } else {
+    console.log("Disabled");
+  }
+});
+```
+
+### Multiple Signal Dependencies
+
+```typescript
+const signals = [sig1, sig2, sig3];
+
+const effect = new Effect((e) => {
+  // Get all values, returns undefined if any are falsy
+  const values = e.getAll(signals);
+  
+  if (values) {
+    console.log("All values:", values);
+  }
+});
+```
+
+## Framework Integrations
+
+### React
+
+```typescript
+import { useSignal, useEffect } from "@moq/signals/react";
+
+function Counter() {
+  const count = useSignal(0);
+  
+  return (
+    <div>
+      <p>Count: {count.peek()}</p>
+      <button onClick={() => count.set(c => c + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}
+```
+
+### Solid.js
+
+```typescript
+import { fromSignal, toSignal } from "@moq/signals/solid";
+import { createSignal } from "solid-js";
+
+// Convert Solid signal to @moq/signals Signal
+const [solidCount, setSolidCount] = createSignal(0);
+const moqCount = fromSignal(solidCount);
+
+// Convert @moq/signals Signal to Solid signal
+const moqSignal = new Signal(42);
+const solidSignal = toSignal(moqSignal);
+```
+
+## Best Practices
+
+### Always Clean Up
+
+```typescript
+// Bad: memory leak
+const dispose = signal.subscribe(...);
+
+// Good: clean up when done
+const dispose = signal.subscribe(...);
+// Later:
+dispose();
+
+// Best: use Effect for automatic cleanup
+const effect = new Effect((e) => {
+  e.subscribe(signal, value => {
+    // Automatically cleaned up
+  });
+});
+```
+
+### Avoid Infinite Loops
+
+```typescript
+// Bad: infinite loop!
+const count = new Signal(0);
+const effect = new Effect((e) => {
+  const value = e.get(count);
+  count.set(value + 1); // This will trigger the effect again!
+});
+
+// Good: set without notify
+const effect = new Effect((e) => {
+  const value = e.get(count);
+  count.set(value + 1, false); // Don't notify subscribers
+});
+```
+
+### Use Mutations for Objects
+
+```typescript
+// Bad: creates new array but doesn't notify properly
+const list = new Signal([1, 2, 3]);
+list.peek().push(4); // Won't trigger subscribers!
+
+// Good: use mutate
+list.mutate(arr => {
+  arr.push(4);
+}); // Triggers subscribers
+
+// Also good: create new array
+list.set(prev => [...prev, 4]);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/lite" icon="code" href="/typescript/moq-lite">
+    See signals used in the MoQ protocol
+  </Card>
+  
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    Signals power the watch component
+  </Card>
+  
+  <Card title="@moq/publish" icon="video" href="/typescript/publish">
+    Signals power the publish component
+  </Card>
+  
+  <Card title="Examples" icon="book" href="https://github.com/moq-dev/moq/tree/main/js/signals">
+    See more examples in the repository
+  </Card>
+</CardGroup>

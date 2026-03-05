@@ -1,0 +1,434 @@
+---
+title: "@moq/ui-core"
+description: "Shared UI components and theme system"
+---
+
+**[@moq/ui-core](https://www.npmjs.com/package/@moq/ui-core)** provides shared UI components and a CSS theme system used by @moq/watch and @moq/publish.
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @moq/ui-core @moq/signals
+```
+
+```bash bun
+bun add @moq/ui-core @moq/signals
+```
+
+```bash pnpm
+pnpm add @moq/ui-core @moq/signals
+```
+
+</CodeGroup>
+
+## Package Information
+
+- **Version**: 0.1.0
+- **License**: MIT OR Apache-2.0
+- **Repository**: [github:moq-dev/moq](https://github.com/moq-dev/moq)
+- **Peer Dependencies**: `@moq/signals`
+
+## Components
+
+### Button
+
+A styled button component with variants:
+
+```typescript
+import { Button } from "@moq/ui-core";
+import type { ButtonProps } from "@moq/ui-core";
+
+// Basic button
+<Button onClick={() => console.log("Clicked")}>Click Me</Button>
+
+// Button variants
+<Button variant="primary">Primary</Button>
+<Button variant="secondary">Secondary</Button>
+<Button variant="danger">Danger</Button>
+
+// Button sizes
+<Button size="small">Small</Button>
+<Button size="medium">Medium</Button>
+<Button size="large">Large</Button>
+
+// Disabled button
+<Button disabled>Disabled</Button>
+
+// Button with icon
+<Button>
+  <Icon.Play />
+  Play
+</Button>
+```
+
+#### Button Props
+
+```typescript
+interface ButtonProps {
+  variant?: "primary" | "secondary" | "danger";
+  size?: "small" | "medium" | "large";
+  disabled?: boolean;
+  onClick?: () => void;
+  children?: JSX.Element;
+  class?: string;
+}
+```
+
+### Icon
+
+Icon components for common actions:
+
+```typescript
+import * as Icon from "@moq/ui-core/Icon";
+
+// Available icons
+<Icon.Play />
+<Icon.Pause />
+<Icon.Stop />
+<Icon.Mute />
+<Icon.Unmute />
+<Icon.Camera />
+<Icon.Screen />
+<Icon.Settings />
+<Icon.Close />
+<Icon.Fullscreen />
+<Icon.ExitFullscreen />
+```
+
+Icons are SVG-based and inherit color from their parent:
+
+```css
+.icon-container {
+  color: #ff0000;
+}
+
+/* Icon will be red */
+<div class="icon-container">
+  <Icon.Play />
+</div>
+```
+
+### Stats
+
+Display real-time statistics:
+
+```typescript
+import { Stats } from "@moq/ui-core";
+import type { StatsProvider } from "@moq/ui-core";
+
+// Create a stats provider
+const provider: StatsProvider = {
+  name: "Video",
+  stats: new Signal({
+    framesDecoded: 0,
+    framesDropped: 0,
+    bytesReceived: 0
+  })
+};
+
+// Display stats
+<Stats provider={provider} />
+```
+
+#### Stats Types
+
+```typescript
+interface StatsProvider {
+  name: string;
+  stats: Signal<Record<string, number | string>>;
+}
+
+interface ProviderContext {
+  providers: Signal<StatsProvider[]>;
+}
+```
+
+## CSS Theme System
+
+The theme system uses CSS variables for easy customization.
+
+### Variables
+
+Import the base variables:
+
+```css
+@import "@moq/ui-core/variables.css";
+```
+
+Available variables:
+
+```css
+:root {
+  /* Colors */
+  --moq-color-primary: #0066ff;
+  --moq-color-secondary: #6c757d;
+  --moq-color-danger: #dc3545;
+  --moq-color-success: #28a745;
+  --moq-color-warning: #ffc107;
+  
+  /* Background */
+  --moq-bg-primary: #ffffff;
+  --moq-bg-secondary: #f8f9fa;
+  --moq-bg-dark: #212529;
+  
+  /* Text */
+  --moq-text-primary: #212529;
+  --moq-text-secondary: #6c757d;
+  --moq-text-light: #ffffff;
+  
+  /* Border */
+  --moq-border-color: #dee2e6;
+  --moq-border-radius: 4px;
+  
+  /* Spacing */
+  --moq-spacing-xs: 4px;
+  --moq-spacing-sm: 8px;
+  --moq-spacing-md: 16px;
+  --moq-spacing-lg: 24px;
+  --moq-spacing-xl: 32px;
+  
+  /* Typography */
+  --moq-font-family: system-ui, -apple-system, sans-serif;
+  --moq-font-size-sm: 12px;
+  --moq-font-size-md: 14px;
+  --moq-font-size-lg: 16px;
+  --moq-font-weight-normal: 400;
+  --moq-font-weight-bold: 600;
+  
+  /* Shadows */
+  --moq-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --moq-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --moq-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.15);
+}
+```
+
+### Dark Theme
+
+Override variables for dark theme:
+
+```css
+:root[data-theme="dark"] {
+  --moq-bg-primary: #212529;
+  --moq-bg-secondary: #343a40;
+  --moq-bg-dark: #000000;
+  
+  --moq-text-primary: #ffffff;
+  --moq-text-secondary: #adb5bd;
+  
+  --moq-border-color: #495057;
+}
+```
+
+Apply theme:
+
+```html
+<html data-theme="dark">
+  <!-- Your content -->
+</html>
+```
+
+### Custom Theme
+
+Create your own theme:
+
+```css
+@import "@moq/ui-core/variables.css";
+
+:root {
+  /* Override with your brand colors */
+  --moq-color-primary: #ff6b6b;
+  --moq-color-secondary: #4ecdc4;
+  
+  /* Custom font */
+  --moq-font-family: "Inter", sans-serif;
+  
+  /* Rounded corners */
+  --moq-border-radius: 12px;
+}
+```
+
+## Flex Utilities
+
+Import flex utilities for layout:
+
+```css
+@import "@moq/ui-core/flex.css";
+```
+
+Utility classes:
+
+```html
+<!-- Flexbox layouts -->
+<div class="flex">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</div>
+
+<div class="flex flex-column">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</div>
+
+<!-- Alignment -->
+<div class="flex flex-center">
+  <div>Centered</div>
+</div>
+
+<div class="flex flex-between">
+  <div>Left</div>
+  <div>Right</div>
+</div>
+
+<div class="flex flex-around">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</div>
+
+<!-- Gaps -->
+<div class="flex flex-gap-sm">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</div>
+
+<div class="flex flex-gap-md">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</div>
+
+<div class="flex flex-gap-lg">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</div>
+```
+
+## Component Styles
+
+Import individual component styles:
+
+```css
+/* Button styles */
+@import "@moq/ui-core/button/button.css";
+
+/* Stats styles */
+@import "@moq/ui-core/stats/styles/index.css";
+```
+
+## Complete Example
+
+Here's a complete example using the theme system:
+
+```html
+<!DOCTYPE html>
+<html data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <title>MoQ UI Example</title>
+  <style>
+    @import "@moq/ui-core/variables.css";
+    @import "@moq/ui-core/flex.css";
+    @import "@moq/ui-core/button/button.css";
+    
+    body {
+      font-family: var(--moq-font-family);
+      background: var(--moq-bg-primary);
+      color: var(--moq-text-primary);
+      padding: var(--moq-spacing-lg);
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MoQ UI Components</h1>
+    
+    <div class="flex flex-gap-md" id="app"></div>
+  </div>
+  
+  <script type="module">
+    import { render } from "solid-js/web";
+    import { Button } from "@moq/ui-core";
+    import * as Icon from "@moq/ui-core/Icon";
+    
+    const app = document.getElementById("app");
+    
+    render(() => (
+      <>
+        <Button variant="primary">
+          <Icon.Play />
+          Play
+        </Button>
+        
+        <Button variant="secondary">
+          <Icon.Pause />
+          Pause
+        </Button>
+        
+        <Button variant="danger">
+          <Icon.Stop />
+          Stop
+        </Button>
+      </>
+    ), app);
+  </script>
+</body>
+</html>
+```
+
+## TypeScript Support
+
+All components have full TypeScript support:
+
+```typescript
+import { Button, Stats } from "@moq/ui-core";
+import type { ButtonProps, StatsProvider } from "@moq/ui-core";
+
+// Type-safe props
+const props: ButtonProps = {
+  variant: "primary",
+  size: "large",
+  onClick: () => console.log("Clicked")
+};
+
+<Button {...props}>Click Me</Button>
+```
+
+## Using with Watch and Publish
+
+The components are automatically styled when using @moq/watch or @moq/publish:
+
+```typescript
+import "@moq/watch/element";
+import "@moq/ui-core/variables.css";
+
+// Watch component inherits theme
+<moq-watch
+  url="https://relay.quic.video"
+  broadcast="my-stream">
+</moq-watch>
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="@moq/watch" icon="play" href="/typescript/watch">
+    See UI components in the watch component
+  </Card>
+  
+  <Card title="@moq/publish" icon="video" href="/typescript/publish">
+    See UI components in the publish component
+  </Card>
+  
+  <Card title="@moq/signals" icon="bolt" href="/typescript/signals">
+    Learn about reactive state management
+  </Card>
+  
+  <Card title="Solid.js" icon="book" href="https://www.solidjs.com/">
+    Learn about Solid.js framework
+  </Card>
+</CardGroup>

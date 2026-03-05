@@ -1,0 +1,404 @@
+---
+title: hang Media Layer
+description: Learn about the media-specific protocol built on top of moq-lite
+---
+
+# hang Media Layer
+
+**hang** is a WebCodecs-compatible media encoding layer built on top of [moq-lite](/concepts/moq-lite). It handles codecs, containers, and media-specific metadata, making it easy to stream audio and video.
+
+<Info>
+Think of **hang** as HLS/DASH for Moq - it defines how media is packaged and described, while **moq-lite** is the HTTP that delivers it.
+</Info>
+
+## Why hang?
+
+While moq-lite provides generic pub/sub transport, media streaming has specific needs:
+
+- **Codec information**: What codec? What parameters?
+- **Timing information**: When should this frame be displayed?
+- **Track relationships**: How do audio and video tracks relate?
+- **Rendition selection**: Which quality level should I subscribe to?
+
+hang provides standardized answers to these questions, making it easy to build interoperable media applications.
+
+## Architecture
+
+Each hang broadcast consists of:
+
+### 1. Catalog Track
+
+A special JSON track that describes the broadcast:
+
+```json
+{
+  "tracks": [
+    {
+      "name": "video/1080p",
+      "kind": "video",
+      "codec": "avc1.64002a",
+      "width": 1920,
+      "height": 1080,
+      "framerate": 30,
+      "bitrate": 5000000
+    },
+    {
+      "name": "audio/en",
+      "kind": "audio",
+      "codec": "mp4a.40.2",
+      "sampleRate": 48000,
+      "channelCount": 2,
+      "bitrate": 128000
+    }
+  ]
+}
+```
+
+**Key features:**
+- **Live updates**: Catalog is a live track that updates as renditions change
+- **WebCodecs compatible**: Codec strings work directly with WebCodecs APIs
+- **Discovery**: Subscribers learn about available tracks before subscribing
+- **Metadata**: Includes dimensions, bitrates, languages, etc.
+
+### 2. Media Tracks
+
+Individual tracks for each rendition, containing containerized frames:
+
+- `video/1080p` - 1080p video rendition
+- `video/720p` - 720p video rendition
+- `audio/en` - English audio track
+- `audio/es` - Spanish audio track
+
+## Container Formats
+
+hang supports two container formats for wrapping codec payloads:
+
+### Legacy Container
+
+Simple format: timestamp + codec payload
+
+```
+┌─────────────┬──────────────────┐
+│  Timestamp  │  Codec Bitstream │
+│  (8 bytes)  │  (variable)      │
+└─────────────┴──────────────────┘
+```
+
+**Use cases:**
+- Simple streaming scenarios
+- Custom pipelines
+- Low overhead
+
+### CMAF Container
+
+Fragmented MP4 (fMP4) format: moof + mdat pairs
+
+```
+┌──────────┬──────────┐
+│   moof   │   mdat   │
+│ (header) │ (payload)│
+└──────────┴──────────┘
+```
+
+**Use cases:**
+- Standards compliance
+- Integration with existing tools (FFmpeg, GStreamer)
+- Industry compatibility
+
+<Tip>
+Use CMAF for maximum compatibility with existing media pipelines and tools.
+</Tip>
+
+## Working with hang
+
+<Tabs>
+  <Tab title="Rust">
+    ### Publishing Media
+
+    ```rust
+    use hang::{Catalog, catalog::Track};
+    use moq_lite::Origin;
+
+    // Create origin and broadcast
+    let origin = Origin::new();
+    let broadcast = origin.create("my-stream");
+
+    // Create catalog
+    let mut catalog = Catalog::new();
+
+    // Add video track to catalog
+    catalog.add(Track {
+        name: "video/1080p".into(),
+        kind: "video".into(),
+        codec: "avc1.64002a".into(),
+        width: Some(1920),
+        height: Some(1080),
+        framerate: Some(30.0),
+        bitrate: Some(5_000_000),
+        ..Default::default()
+    });
+
+    // Publish catalog
+    catalog.publish(&broadcast).await?;
+
+    // Create and publish video track
+    let mut video_track = broadcast.create_track("video/1080p");
+    
+    // Publish groups (e.g., GOPs)
+    for gop in video_encoder {
+        let mut group = video_track.create_group(gop.timestamp);
+        for frame in gop.frames {
+            group.write(frame.data).await?;
+        }
+        group.close().await?;
+    }
+    ```
+
+    ### Subscribing to Media
+
+    ```rust
+    use hang::{CatalogConsumer, container::Frame};
+
+    // Subscribe to broadcast
+    let broadcast = session.subscribe("my-stream").await?;
+
+    // Read catalog
+    let catalog = CatalogConsumer::new(&broadcast).await?;
+    
+    // Get available tracks
+    let tracks = catalog.tracks();
+    for track in tracks {
+        println!("Track: {} ({})", track.name, track.codec);
+    }
+
+    // Subscribe to specific track
+    let video_track = catalog.subscribe("video/1080p").await?;
+
+    // Decode frames
+    while let Some(frame) = video_track.next_frame().await? {
+        let timestamp = frame.timestamp();
+        let data = frame.payload();
+        
+        // Send to decoder (WebCodecs, FFmpeg, etc.)
+        decoder.decode(data, timestamp)?;
+    }
+    ```
+  </Tab>
+  <Tab title="TypeScript">
+    ### Publishing Media
+
+    ```typescript
+    import { Client } from '@moq/lite'
+    import { Catalog, Broadcast } from '@moq/hang'
+
+    // Connect and create broadcast
+    const client = await Client.connect('https://relay.example.com')
+    const broadcast = new Broadcast(client, 'my-stream')
+
+    // Create catalog
+    const catalog = new Catalog()
+
+    // Add video track
+    catalog.add({
+      name: 'video/1080p',
+      kind: 'video',
+      codec: 'avc1.64002a',
+      width: 1920,
+      height: 1080,
+      framerate: 30,
+      bitrate: 5_000_000
+    })
+
+    // Publish catalog
+    await catalog.publish(broadcast)
+
+    // Create video track
+    const videoTrack = broadcast.createTrack('video/1080p')
+
+    // Publish frames from WebCodecs encoder
+    encoder.addEventListener('chunk', async (e) => {
+      const chunk = e.detail
+      const group = videoTrack.createGroup(chunk.timestamp)
+      
+      const data = new Uint8Array(chunk.byteLength)
+      chunk.copyTo(data)
+      
+      await group.write(data)
+      await group.close()
+    })
+    ```
+
+    ### Subscribing with Web Component
+
+    The easiest way to subscribe is using the `<moq-watch>` Web Component:
+
+    ```html
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <script type="module">
+          import '@moq/watch/ui'
+        </script>
+      </head>
+      <body>
+        <moq-watch 
+          url="https://relay.example.com" 
+          name="my-stream"
+        ></moq-watch>
+      </body>
+    </html>
+    ```
+
+    ### Subscribing with JavaScript API
+
+    ```typescript
+    import { Client } from '@moq/lite'
+    import { Catalog, Watch } from '@moq/hang'
+
+    // Connect and subscribe
+    const client = await Client.connect('https://relay.example.com')
+    const broadcast = await client.subscribe('my-stream')
+
+    // Read catalog
+    const catalog = await Catalog.fetch(broadcast)
+    
+    // Get available tracks
+    const tracks = catalog.tracks()
+    console.log('Available tracks:', tracks)
+
+    // Create watcher (handles WebCodecs decoding)
+    const watch = new Watch(broadcast, catalog)
+    
+    // Attach to video element
+    const video = document.querySelector('video')
+    watch.attach(video)
+
+    // Start playback
+    await watch.play()
+    ```
+  </Tab>
+</Tabs>
+
+## Catalog Updates
+
+The catalog is a **live track** that can be updated during streaming:
+
+```rust
+// Add a new rendition mid-stream
+catalog.add(Track {
+    name: "video/480p".into(),
+    kind: "video".into(),
+    codec: "avc1.64001e".into(),
+    width: Some(854),
+    height: Some(480),
+    framerate: Some(30.0),
+    bitrate: Some(1_500_000),
+    ..Default::default()
+});
+
+// Update catalog
+catalog.publish(&broadcast).await?;
+```
+
+Subscribers receive the update and can switch to the new rendition.
+
+## Integration with Media Tools
+
+hang is designed to integrate seamlessly with existing media tools:
+
+### FFmpeg
+
+Generate CMAF-formatted content:
+
+```bash
+ffmpeg -i input.mp4 \
+  -c copy \
+  -f mp4 \
+  -movflags cmaf+separate_moof+delay_moov+skip_trailer+frag_every_frame \
+  - | moq publish --format fmp4
+```
+
+### GStreamer
+
+Use the [hang-gst](https://github.com/moq-dev/gstreamer) plugin:
+
+```bash
+gst-launch-1.0 videotestsrc ! hangsink url=https://relay.example.com name=test
+```
+
+### WebCodecs
+
+Direct integration with browser encoding/decoding:
+
+```typescript
+const encoder = new VideoEncoder({
+  output: (chunk) => {
+    // chunk is already in the right format
+    publishToHang(chunk)
+  },
+  error: (e) => console.error(e)
+})
+
+encoder.configure({
+  codec: 'avc1.64002a',
+  width: 1920,
+  height: 1080,
+  bitrate: 5_000_000,
+  framerate: 30
+})
+```
+
+## Track Naming Conventions
+
+While hang doesn't enforce naming, these conventions are recommended:
+
+- `video/{resolution}` - e.g., `video/1080p`, `video/720p`
+- `audio/{language}` - e.g., `audio/en`, `audio/es`
+- `subtitle/{language}` - e.g., `subtitle/en`, `subtitle/es`
+- Custom tracks - e.g., `chat`, `telemetry`, `metadata`
+
+## Libraries
+
+<Tabs>
+  <Tab title="Rust">
+    **Crate:** `hang` ([docs.rs](https://docs.rs/hang))
+
+    ```toml
+    [dependencies]
+    hang = "0.15.1"
+    moq-lite = "0.15.0"
+    ```
+
+    **Also includes:**
+    - `moq-mux` - Import from fMP4, HLS, CMAF
+    - `moq-cli` - Command-line publisher
+  </Tab>
+  <Tab title="TypeScript">
+    **Package:** `@moq/hang` ([npm](https://www.npmjs.com/package/@moq/hang))
+
+    ```bash
+    npm install @moq/hang @moq/lite
+    ```
+
+    **Also includes:**
+    - `@moq/watch` - Subscribe and render
+    - `@moq/publish` - Publish from browser
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Publishing Guide" icon="upload" href="/guides/publishing">
+    Learn how to publish media with hang
+  </Card>
+  <Card title="Watching Guide" icon="eye" href="/guides/watching">
+    Subscribe to and play hang broadcasts
+  </Card>
+  <Card title="moq-lite Protocol" icon="bus" href="/concepts/moq-lite">
+    Understand the underlying transport
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    See how hang fits in the stack
+  </Card>
+</CardGroup>
