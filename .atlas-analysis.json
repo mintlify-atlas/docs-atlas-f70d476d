@@ -1,0 +1,164 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Moq",
+  "projectDescription": "Real-time live media delivery protocol libraries for Rust and TypeScript built on QUIC",
+  "theme": "aspen",
+  "primaryColor": "#04bc2c",
+  "lightColor": "#fcfcfc",
+  "darkColor": "#0e172d",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/moq-lite",
+              "concepts/hang",
+              "concepts/use-cases"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/publishing",
+              "guides/watching",
+              "guides/authentication",
+              "guides/relay-setup",
+              "guides/production"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Rust SDK",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "rust/overview",
+              "rust/getting-started"
+            ]
+          },
+          {
+            "group": "Core Crates",
+            "pages": [
+              "rust/moq-lite",
+              "rust/moq-native",
+              "rust/hang"
+            ]
+          },
+          {
+            "group": "Applications",
+            "pages": [
+              "rust/moq-relay",
+              "rust/moq-cli",
+              "rust/moq-token"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "rust/moq-mux",
+              "rust/libmoq"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "TypeScript SDK",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "typescript/overview",
+              "typescript/getting-started"
+            ]
+          },
+          {
+            "group": "Core Packages",
+            "pages": [
+              "typescript/moq-lite",
+              "typescript/hang",
+              "typescript/signals"
+            ]
+          },
+          {
+            "group": "Web Components",
+            "pages": [
+              "typescript/watch",
+              "typescript/publish",
+              "typescript/ui-core"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "typescript/token",
+              "typescript/clock"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "Media Tools",
+            "pages": [
+              "integrations/ffmpeg",
+              "integrations/obs",
+              "integrations/gstreamer"
+            ]
+          },
+          {
+            "group": "Web",
+            "pages": [
+              "integrations/web-component",
+              "integrations/react",
+              "integrations/vue"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time latency using QUIC for prioritization and partial reliability",
+    "Massive scale with CDN fan-out and cross-region clustering support",
+    "Modern web APIs (WebTransport, WebCodecs, WebAudio)",
+    "Multi-language with Rust (native) and TypeScript (web) implementations",
+    "Generic pub/sub for any live data, not just media",
+    "Layered architecture separating transport (moq-lite) from media (hang)",
+    "WebRTC-like latency without WebRTC constraints",
+    "Built-in authentication via JWT tokens"
+  ],
+  "publicApiSurface": [
+    "moq-lite: Origin, Broadcast, Track, Group, Frame",
+    "moq-lite: Client, Server, Session",
+    "hang: Catalog, Container, Support",
+    "moq-relay: Relay server binary",
+    "moq-cli: CLI for publishing media",
+    "moq-token: JWT authentication",
+    "moq-native: QUIC endpoint configuration",
+    "moq-mux: Media muxers (fMP4, CMAF, HLS)",
+    "@moq/lite: Connection, Broadcast, Track, Group",
+    "@moq/hang: Catalog, Container, Util",
+    "@moq/watch: Watch component and API",
+    "@moq/publish: Publish component and API",
+    "@moq/token: Token generation",
+    "@moq/signals: Reactive signals",
+    "@moq/ui-core: UI components",
+    "libmoq: C bindings for moq-lite"
+  ]
+}
